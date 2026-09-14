@@ -170,10 +170,13 @@ function OptionPill({ selected, theme, onClick, children }: { selected: boolean;
     );
 }
 
-const qualityLabels: Record<string, string> = { auto: "自动", high: "高", medium: "中", low: "低" };
+const qualityLabels: Record<string, string> = { auto: "自动", high: "高", medium: "更高", low: "标准" };
 
 export function imageQualityLabel(value: string | undefined) {
-    return (value && qualityLabels[value]) || value || "";
+    if (!value) return "";
+    const key = `settingsPanels.image.qualities.${value}`;
+    if (i18n.exists(key)) return i18n.t(key);
+    return qualityLabels[value] || value;
 }
 
 export function imageAspectLabel(value: string | undefined) {

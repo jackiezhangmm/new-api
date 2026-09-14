@@ -318,5 +318,18 @@ test("Midjourney (mj_imagine) 模型能力规格、参数纠偏与提示词 --ar
     assert.equal(editManualArReq.prompt, "modern cyberpunk city --ar 21:9");
 });
 
+test("画质文案显示映射：low 与 medium 显示为标准与更高", async () => {
+    const { imageQualityLabel, imageQualityOptions } = await import("../../../components/image-settings-panel");
+    assert.equal(imageQualityLabel("low"), "标准");
+    assert.equal(imageQualityLabel("medium"), "更高");
+    assert.deepEqual(
+        imageQualityOptions.map((item) => ({ value: item.value, label: item.label })),
+        [
+            { value: "low", label: "标准" },
+            { value: "medium", label: "更高" },
+        ],
+    );
+});
+
 
 

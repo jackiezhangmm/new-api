@@ -74,7 +74,27 @@ export async function runCanvasImageGeneration(
         const editFn = io.edit ?? io.generate ?? requestEdit;
         const generateFn = io.generate ?? requestGeneration;
         const storeFn = io.store ?? uploadImage;
-        const images = isEdit ? await editFn(config, prompt, references, { signal }) : await generateFn(config, prompt, { signal });
+        const onTaskId = (taskId: string) => {
+            run.setNodes((nodes) =>
+                nodes.map((node) => {
+                    if (node.metadata?.generationId !== generationId) return node;
+                    if (node.id !== targetId && (!reuse || node.id !== sourceId)) return node;
+                    return { ...node, metadata: { ...node.metadata, mjTaskId: taskId } };
+                }),
+            );
+        };
+        const onProgress = (progress: string) => {
+            run.setNodes((nodes) =>
+                nodes.map((node) => {
+                    if (node.metadata?.generationId !== generationId) return node;
+                    if (node.id !== targetId && (!reuse || node.id !== sourceId)) return node;
+                    return { ...node, metadata: { ...node.metadata, progress } };
+                }),
+            );
+        };
+        const images = isEdit
+            ? await editFn(config, prompt, references, { signal, onTaskId, onProgress })
+            : await generateFn(config, prompt, { signal, onTaskId, onProgress });
         signal.throwIfAborted();
         if (!run.getNodes().some((node) => node.id === sourceId) || !run.getNodes().some((node) => node.id === targetId && node.metadata?.generationId === generationId)) throw new DOMException("Aborted", "AbortError");
         const stored = await Promise.all(
@@ -113,6 +133,8 @@ export async function runCanvasImageGeneration(
                     metadata: {
                         ...node.metadata,
                         generationId: undefined,
+                        mjTaskId: undefined,
+                        progress: undefined,
                         status: "success" as const,
                         errorDetails: undefined,
                         images: items,
@@ -127,7 +149,7 @@ export async function runCanvasImageGeneration(
                 };
             }),
         );
-        return { targetId, received: images.length, requested: Number(config.count) };
+        return { targetId, received: images.length, requested: Number(config.count), usedOriginalGrid: Boolean((images as any).usedOriginalGrid) };
     } catch (error) {
         if (signal.aborted || (error instanceof Error && error.name === "AbortError")) throw new DOMException("Aborted", "AbortError");
         const errorDetails = error instanceof Error ? error.message : i18n.t("canvas.projectPage.generationFailed");
@@ -139,6 +161,8 @@ export async function runCanvasImageGeneration(
                     metadata: {
                         ...node.metadata,
                         generationId: undefined,
+                        mjTaskId: undefined,
+                        progress: undefined,
                         status: node.metadata.content ? ("success" as const) : ("error" as const),
                         errorDetails,
                         images: node.metadata.images?.map((image) => (image.status === "loading" ? { ...image, status: "error" as const, errorDetails } : image)),

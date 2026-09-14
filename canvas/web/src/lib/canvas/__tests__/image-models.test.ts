@@ -9,6 +9,7 @@ import {
     defaultImageSettings,
     filterCanvasAuxiliaryTextModels,
     filterCanvasImageModels,
+    getCanvasImageModel,
     imageSettingsIssues,
     resolveAuxiliaryTextModel,
     resolveImageSettings,
@@ -247,5 +248,75 @@ test("模型载荷按能力矩阵适配：非 gpt-image-2 不附带 output_forma
     // grok edit 不支持 quality
     assert.ok(imageSettingsIssues({ ...grokEditSettings, quality: "low" }, allModels, "edit", 1).length > 0);
 });
+
+test("Midjourney (mj_imagine) 模型能力规格、参数纠偏与提示词 --ar 仲裁校验", () => {
+    const allModels = ["gpt-image-2", "nano-banana-2", "grok-imagine-image-2.0", "mj_imagine"];
+
+    // 1. filterCanvasImageModels 与模型定义
+    assert.ok(filterCanvasImageModels(allModels).includes("mj_imagine"));
+    const mjDef = getCanvasImageModel("mj_imagine");
+    assert.ok(mjDef);
+    assert.equal(mjDef.protocol, "midjourney");
+    assert.equal(mjDef.supportsMaskEdit, false);
+    assert.equal(mjDef.operations.generation?.maxOutputs, 1);
+    assert.equal(mjDef.operations.edit?.maxReferences, 3);
+    assert.deepEqual(mjDef.operations.generation?.sizing.resolutions, []);
+
+    // 2. 参数合法性校验
+    const validMjSettings = {
+        model: "mj_imagine",
+        resolution: "",
+        aspectRatio: "16:9",
+        quality: "",
+        size: "",
+        background: "",
+        count: "1",
+    };
+    assert.equal(imageSettingsIssues(validMjSettings, allModels).length, 0);
+
+    // mj_imagine 锁定单张输出，count: 2 非法
+    assert.ok(imageSettingsIssues({ ...validMjSettings, count: "2" }, allModels).length > 0);
+    // mj_imagine 不支持分辨率设定，resolution: "1k" 非法
+    assert.ok(imageSettingsIssues({ ...validMjSettings, resolution: "1k" }, allModels).length > 0);
+    // mj_imagine 不支持画质设定，quality: "low" 非法
+    assert.ok(imageSettingsIssues({ ...validMjSettings, quality: "low" }, allModels).length > 0);
+    // 不在白名单的比例（如 1:4）非法
+    assert.ok(imageSettingsIssues({ ...validMjSettings, aspectRatio: "1:4" }, allModels).length > 0);
+
+    // 图生图：支持 1~3 张参考图，4 张超限拦截
+    assert.equal(imageSettingsIssues(validMjSettings, allModels, "edit", 3).length, 0);
+    assert.ok(imageSettingsIssues(validMjSettings, allModels, "edit", 4).length > 0);
+
+    // 3. switchImageModel 自动纠偏
+    const switchedToMj = switchImageModel(
+        { ...defaultImageSettings, resolution: "2k", quality: "medium", count: "4", aspectRatio: "1:3" },
+        "mj_imagine",
+    );
+    assert.equal(switchedToMj.settings.resolution, "");
+    assert.equal(switchedToMj.settings.quality, "");
+    assert.equal(switchedToMj.settings.count, "1");
+    assert.equal(switchedToMj.settings.aspectRatio, "1:1"); // 1:3 不在 mj 白名单，重置为 1:1
+    assert.ok(switchedToMj.adjusted.includes("resolution"));
+    assert.ok(switchedToMj.adjusted.includes("quality"));
+    assert.ok(switchedToMj.adjusted.includes("count"));
+    assert.ok(switchedToMj.adjusted.includes("aspectRatio"));
+
+    // 4. 提示词 --ar 仲裁
+    // 4.1 用户未写 --ar 时，自动从面板 settings.aspectRatio 追加
+    const autoArReq = buildCanvasImageRequest(validMjSettings, "a majestic castle in the mountains", allModels);
+    assert.equal(autoArReq.prompt, "a majestic castle in the mountains --ar 16:9");
+    assert.equal((autoArReq as Record<string, unknown>).output_format, undefined);
+
+    // 4.2 用户显式手写 --ar 4:3 时，保持手写优先，不重复追加面板的 16:9
+    const manualArReq = buildCanvasImageRequest(validMjSettings, "a majestic castle --ar 4:3 --v 6.1", allModels);
+    assert.equal(manualArReq.prompt, "a majestic castle --ar 4:3 --v 6.1");
+
+    // 4.3 图生图时同理遵循 --ar 仲裁
+    const editAutoArReq = buildCanvasImageEditRequest(validMjSettings, "modern cyberpunk city", allModels, 2);
+    assert.equal(editAutoArReq.prompt, "modern cyberpunk city --ar 16:9");
+    const editManualArReq = buildCanvasImageEditRequest(validMjSettings, "modern cyberpunk city --ar 21:9", allModels, 2);
+    assert.equal(editManualArReq.prompt, "modern cyberpunk city --ar 21:9");
+});
+
 
 

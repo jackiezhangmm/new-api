@@ -1,6 +1,7 @@
 import type { AiTextMessage } from "@/services/api/image";
 import i18n from "@/i18n";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
+import { MIDJOURNEY_POLISH_TEMPLATE } from "@/services/api/prompts";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
@@ -156,17 +157,15 @@ function readNodeGenerationResource(node: CanvasNodeData): NodeGenerationResourc
     return text ? [{ nodeId: node.id, type: "text", title: node.title, text }] : [];
 }
 
-export function buildNodeResponseMessages(context: NodeGenerationContext): AiTextMessage[] {
-    if (!context.referenceImages.length) {
-        return [{ role: "user", content: context.prompt }];
-    }
-
-    return [
-        {
-            role: "user",
-            content: [{ type: "text" as const, text: context.prompt }, ...context.referenceImages.map((image) => ({ type: "image_url" as const, image_url: { url: image.dataUrl } }))],
-        },
-    ];
+export function buildNodeResponseMessages(context: NodeGenerationContext, options?: { model?: string }): AiTextMessage[] {
+    const systemPrompt = options?.model === "mj_imagine" ? MIDJOURNEY_POLISH_TEMPLATE : undefined;
+    const userMessage: AiTextMessage = !context.referenceImages.length
+        ? { role: "user", content: context.prompt }
+        : {
+              role: "user",
+              content: [{ type: "text" as const, text: context.prompt }, ...context.referenceImages.map((image) => ({ type: "image_url" as const, image_url: { url: image.dataUrl } }))],
+          };
+    return systemPrompt ? [{ role: "system", content: systemPrompt }, userMessage] : [userMessage];
 }
 
 export async function hydrateNodeGenerationContext(context: NodeGenerationContext) {

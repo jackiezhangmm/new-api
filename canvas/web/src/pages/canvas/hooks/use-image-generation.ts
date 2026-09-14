@@ -44,6 +44,8 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                         metadata: {
                             ...node.metadata,
                             generationId: undefined,
+                            mjTaskId: undefined,
+                            progress: undefined,
                             status: node.metadata.content ? "success" : "error",
                             errorDetails,
                             images: node.metadata.images?.map((image) => (image.status === "loading" ? { ...image, status: "error", errorDetails } : image)),
@@ -124,6 +126,7 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                         setRunningIds((current) => new Set(current).add(targetId));
                     },
                 });
+                if (result.usedOriginalGrid) message.info(t("canvas.projectPage.fallbackGrid"));
                 if (result.received < result.requested) message.warning(t("integration.fewerImages", { actual: result.received, requested: result.requested }));
             } catch (error) {
                 if (!controller.signal.aborted && !(error instanceof Error && error.name === "AbortError")) message.error(error instanceof Error ? error.message : t("canvas.projectPage.generationFailed"));
@@ -162,7 +165,11 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
 
                 const rawContext = buildNodeGenerationContext(sourceId, nodesRef.current, connectionsRef.current, effectivePrompt);
                 const context = await hydrateNodeGenerationContext(rawContext);
-                const messages = buildNodeResponseMessages(context);
+                const connectedImageNode = nodesRef.current.find(
+                    (n) => (n.type === CanvasNodeType.Image || n.type === CanvasNodeType.Config) && connectionsRef.current.some((c) => (c.fromNodeId === sourceId && c.toNodeId === n.id) || (c.toNodeId === sourceId && c.fromNodeId === n.id)),
+                );
+                const activeModel = connectedImageNode?.metadata?.model || source.metadata?.model || config.model;
+                const messages = buildNodeResponseMessages(context, { model: activeModel });
 
                 await runCanvasTextGeneration({
                     sourceId,

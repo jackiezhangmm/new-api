@@ -4,7 +4,7 @@ import axios from "axios";
 import { defaultConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { defaultImageEditSettings } from "@/lib/canvas/image-models";
-import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
+import { pollMidjourneyTask, requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 
 test("生成通过宿主认证调用本站，一次请求保留全部返回图片", async () => {
     const fetchBefore = globalThis.fetch;
@@ -381,6 +381,271 @@ test("多协议服务端分流：nano-banana-2 路由至 Gemini 端点，grok �
         globalThis.fetch = fetchBefore;
         axios.post = postBefore;
         globalThis.window = windowBefore;
+        useUserStore.setState({ user: null });
+    }
+});
+
+test("Midjourney (mj_imagine) 文生图/图生图完整链路：提交、轮询、切图/多图转存、降级与中止", async () => {
+    const fetchBefore = globalThis.fetch;
+    const postBefore = axios.post;
+    const getBefore = axios.get;
+    const windowBefore = globalThis.window;
+    const originalCreateImageBitmap = Object.getOwnPropertyDescriptor(globalThis, "createImageBitmap");
+    const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+
+    const account = "905";
+    useUserStore.setState({ user: { id: account, username: "test-mj", displayName: "", avatarUrl: "" } });
+    globalThis.window = {
+        parent: {
+            newApiCanvasHost: {
+                getUser: () => ({ id: account }),
+                getAuthHeaders: async () => ({ Authorization: "Bearer session-token-mj" }),
+                subscribe: () => () => {},
+            },
+        },
+    } as unknown as Window & typeof globalThis;
+
+    let uploadCount = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "/api/user/models") {
+            return new Response(JSON.stringify({ success: true, data: ["mj_imagine", "gpt-image-2"] }));
+        }
+        if (url === "/api/images") {
+            uploadCount++;
+            return new Response(
+                JSON.stringify({
+                    success: true,
+                    data: {
+                        id: `storage-key-${uploadCount}`,
+                        url: `https://storage.example.com/img-${uploadCount}.png`,
+                        width: 1024,
+                        height: 1024,
+                        bytes: 2048,
+                        mime_type: "image/png",
+                    },
+                }),
+            );
+        }
+        return new Response("Not Found", { status: 404 });
+    }) as typeof fetch;
+
+    const mjConfig = {
+        ...defaultConfig,
+        model: "mj_imagine",
+        resolution: "",
+        aspectRatio: "16:9",
+        quality: "",
+        count: "1",
+        models: ["mj_imagine"],
+    };
+
+    try {
+        // 1. 文生图 + 上游分图 (videoUrls) 场景
+        let submitBody: any = null;
+        let pollCount = 0;
+        let recordedTaskId = "";
+        const progressEvents: string[] = [];
+
+        axios.post = (async (url: unknown, body: unknown) => {
+            if (url === "/mj/submit/imagine") {
+                submitBody = body;
+                return { data: { code: 1, result: "task-mj-123" } };
+            }
+            return { data: {} };
+        }) as typeof axios.post;
+
+        axios.get = (async (url: unknown) => {
+            const urlStr = String(url);
+            if (urlStr.includes("/mj/task/task-mj-123/fetch")) {
+                pollCount++;
+                if (pollCount === 1) {
+                    return { data: { status: "IN_PROGRESS", progress: "30%" } };
+                }
+                return {
+                    data: {
+                        status: "SUCCESS",
+                        progress: "100%",
+                        imageUrl: "https://mj.example.com/grid.png",
+                        videoUrls: [{ url: "https://mj.example.com/0.png" }, { url: "https://mj.example.com/1.png" }, { url: "https://mj.example.com/2.png" }, { url: "https://mj.example.com/3.png" }],
+                    },
+                };
+            }
+            if (urlStr.includes("/mj/image/task-mj-123?index=")) {
+                return {
+                    data: new Blob([`mock-img-slice`], { type: "image/png" }),
+                };
+            }
+            return { data: {} };
+        }) as typeof axios.get;
+
+        const results = await requestGeneration(mjConfig, "a cyberpunk samurai", {
+            pollIntervalMs: 1,
+            onTaskId: (taskId) => {
+                recordedTaskId = taskId;
+            },
+            onProgress: (progress) => {
+                progressEvents.push(progress);
+            },
+        });
+
+        assert.equal(recordedTaskId, "task-mj-123");
+        assert.equal(submitBody.prompt, "a cyberpunk samurai --ar 16:9");
+        assert.equal(submitBody.base64Array, undefined);
+        assert.ok(progressEvents.includes("30%"));
+        assert.ok(progressEvents.includes("100%"));
+        assert.equal(results.length, 4);
+        assert.equal(results[0].storageKey, "storage-key-1");
+        assert.equal(results[3].storageKey, "storage-key-4");
+
+        // 2. 客户端切图 (splitMidjourneyGrid) 场景
+        Object.defineProperty(globalThis, "createImageBitmap", {
+            configurable: true,
+            value: async () => ({
+                width: 2048,
+                height: 2048,
+                close: () => {},
+            }),
+        });
+        Object.defineProperty(globalThis, "document", {
+            configurable: true,
+            value: {
+                createElement: () => ({
+                    width: 0,
+                    height: 0,
+                    getContext: () => ({
+                        drawImage: () => {},
+                    }),
+                    toBlob: (callback: (blob: Blob) => void) => {
+                        callback(new Blob(["slice"], { type: "image/png" }));
+                    },
+                }),
+            },
+        });
+
+        uploadCount = 10;
+        axios.get = (async (url: unknown) => {
+            const urlStr = String(url);
+            if (urlStr.includes("/fetch")) {
+                return {
+                    data: {
+                        status: "SUCCESS",
+                        progress: "100%",
+                        imageUrl: "https://mj.example.com/grid.png",
+                        videoUrls: [], // 无独立切图，走客户端 2x2 切割
+                    },
+                };
+            }
+            if (urlStr.includes("/mj/image/task-mj-123")) {
+                return {
+                    data: new Blob(["full-grid"], { type: "image/png" }),
+                };
+            }
+            return { data: {} };
+        }) as typeof axios.get;
+
+        const clientSplitResults = await pollMidjourneyTask("task-mj-123", { pollIntervalMs: 1 });
+        assert.equal(clientSplitResults.images.length, 4);
+        assert.equal(clientSplitResults.usedOriginalGrid, false);
+        assert.equal(clientSplitResults.images[0].storageKey, "storage-key-11");
+
+        // 3. 切图失败优雅降级为单张原图
+        Object.defineProperty(globalThis, "createImageBitmap", {
+            configurable: true,
+            value: async () => {
+                throw new Error("Canvas split boom");
+            },
+        });
+
+        uploadCount = 20;
+        const fallbackResults = await pollMidjourneyTask("task-mj-123", { pollIntervalMs: 1 });
+        assert.equal(fallbackResults.images.length, 1);
+        assert.equal(fallbackResults.usedOriginalGrid, true);
+        assert.equal(fallbackResults.images[0].storageKey, "storage-key-21");
+
+        // 4. 图生图垫图 (requestEdit)：Base64 提取与参数组装
+        let editSubmitBody: any = null;
+        axios.post = (async (url: unknown, body: unknown) => {
+            if (url === "/mj/submit/imagine") {
+                editSubmitBody = body;
+                return { data: { code: 1, result: "task-edit-456" } };
+            }
+            return { data: {} };
+        }) as typeof axios.post;
+
+        axios.get = (async (url: unknown) => {
+            const urlStr = String(url);
+            if (urlStr.includes("/fetch")) {
+                return {
+                    data: {
+                        status: "SUCCESS",
+                        progress: "100%",
+                        imageUrl: "https://mj.example.com/grid.png",
+                        videoUrls: [{ url: "https://mj.example.com/0.png" }],
+                    },
+                };
+            }
+            if (urlStr.includes("/mj/image/task-edit-456")) {
+                return { data: new Blob(["img"], { type: "image/png" }) };
+            }
+            return { data: {} };
+        }) as typeof axios.get;
+
+        const refImages = [
+            { id: "ref-1", name: "r1.png", type: "image/png", dataUrl: "data:image/png;base64,QUJD", storageKey: "ref-1" },
+            { id: "ref-2", name: "r2.png", type: "image/png", dataUrl: "data:image/png;base64,REVm", storageKey: "ref-2" },
+        ];
+        await requestEdit(mjConfig, "make it look like an oil painting --ar 4:3", refImages, { pollIntervalMs: 1 });
+        assert.equal(editSubmitBody.prompt, "make it look like an oil painting --ar 4:3");
+        assert.deepEqual(editSubmitBody.base64Array, ["data:image/png;base64,QUJD", "data:image/png;base64,REVm"]);
+
+        // 5. 异常拦截分支：提交失败、上游任务失败与 Abort 中止
+        // 5.1 提交失败
+        axios.post = (async () => ({
+            data: { code: 0, description: "余额不足，无法生成" },
+        })) as typeof axios.post;
+        await assert.rejects(
+            () => requestGeneration(mjConfig, "fail prompt"),
+            /余额不足，无法生成/,
+        );
+
+        // 5.2 轮询返回 FAILURE
+        axios.post = (async () => ({
+            data: { code: 1, result: "task-fail-789" },
+        })) as typeof axios.post;
+        axios.get = (async () => ({
+            data: { status: "FAILURE", failReason: "Banned prompt detected" },
+        })) as typeof axios.get;
+        await assert.rejects(
+            () => requestGeneration(mjConfig, "banned prompt", { pollIntervalMs: 1 }),
+            /Banned prompt detected/,
+        );
+
+        // 5.3 Abort 信号拦截
+        const abortCtrl = new AbortController();
+        axios.get = (async () => {
+            abortCtrl.abort();
+            return { data: { status: "IN_PROGRESS", progress: "50%" } };
+        }) as typeof axios.get;
+        await assert.rejects(
+            () => requestGeneration(mjConfig, "abort prompt", { signal: abortCtrl.signal, pollIntervalMs: 1 }),
+            { name: "AbortError" },
+        );
+    } finally {
+        globalThis.fetch = fetchBefore;
+        axios.post = postBefore;
+        axios.get = getBefore;
+        globalThis.window = windowBefore;
+        if (originalCreateImageBitmap) {
+            Object.defineProperty(globalThis, "createImageBitmap", originalCreateImageBitmap);
+        } else {
+            delete (globalThis as any).createImageBitmap;
+        }
+        if (originalDocument) {
+            Object.defineProperty(globalThis, "document", originalDocument);
+        } else {
+            delete (globalThis as any).document;
+        }
         useUserStore.setState({ user: null });
     }
 });

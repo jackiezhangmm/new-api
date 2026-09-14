@@ -10,7 +10,8 @@ import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
-import { imageToDataUrl } from "@/services/image-storage";
+import { imageToDataUrl, uploadImage } from "@/services/image-storage";
+import { splitMidjourneyGrid } from "@/lib/canvas/canvas-image-grid";
 import { imageSizePresets, inferMediaScale } from "@/lib/media-size";
 import type { ReferenceImage } from "@/types/image";
 
@@ -91,7 +92,185 @@ type GeminiPayload = {
     promptFeedback?: { blockReason?: string };
 };
 type GeminiStreamState = { buffer: string; text: string; toolCalls: ResponseToolCall[]; error?: string };
-type RequestOptions = { signal?: AbortSignal };
+export type RequestOptions = {
+    signal?: AbortSignal;
+    onTaskId?: (taskId: string) => void;
+    onProgress?: (progress: string, status: string) => void;
+    pollIntervalMs?: number;
+};
+
+export type MidjourneyTaskResponse = {
+    id?: string;
+    status?: string;
+    progress?: string;
+    imageUrl?: string;
+    videoUrls?: Array<{ url?: string }>;
+    failReason?: string;
+};
+
+export type MidjourneySubmitResponse = {
+    code?: number;
+    description?: string;
+    type?: string;
+    result?: string;
+};
+
+const MIDJOURNEY_POLL_INTERVAL_MS = 1500;
+const MIDJOURNEY_POLL_TIMEOUT_MS = 10 * 60 * 1000;
+
+function waitForMidjourneyPoll(delayMs: number, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) {
+        return Promise.reject(new DOMException("Aborted", "AbortError"));
+    }
+    return new Promise((resolve, reject) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const handleAbort = () => {
+            if (timer) clearTimeout(timer);
+            signal?.removeEventListener("abort", handleAbort);
+            reject(new DOMException("Aborted", "AbortError"));
+        };
+        timer = setTimeout(() => {
+            signal?.removeEventListener("abort", handleAbort);
+            resolve();
+        }, delayMs);
+        signal?.addEventListener("abort", handleAbort);
+    });
+}
+
+export async function pollMidjourneyTask(
+    taskId: string,
+    options?: RequestOptions,
+): Promise<{ taskId: string; images: GeneratedCanvasImage[]; usedOriginalGrid: boolean }> {
+    options?.signal?.throwIfAborted();
+    const headers = await getCanvasAuthHeaders();
+    options?.signal?.throwIfAborted();
+
+    const deadline = Date.now() + MIDJOURNEY_POLL_TIMEOUT_MS;
+    const pollIntervalMs = options?.pollIntervalMs ?? MIDJOURNEY_POLL_INTERVAL_MS;
+
+    while (Date.now() < deadline) {
+        options?.signal?.throwIfAborted();
+        const taskResponse = await axios.get<MidjourneyTaskResponse>(
+            `/mj/task/${encodeURIComponent(taskId)}/fetch`,
+            {
+                headers,
+                signal: options?.signal,
+            },
+        );
+        const task = taskResponse.data;
+        const status = task?.status?.toUpperCase() ?? "";
+        options?.onProgress?.(task?.progress ?? "", status);
+
+        if (status === "SUCCESS") {
+            if (!task.imageUrl) throw new Error(task.failReason || apiText("requestFailed"));
+
+            let imageBlobs: Blob[] = [];
+            let usedOriginalGrid = false;
+
+            const individualImageIndexes = (task.videoUrls ?? []).flatMap(
+                (image, index) => (image.url ? [index] : []),
+            );
+            if (individualImageIndexes.length > 0) {
+                try {
+                    const responses = await Promise.all(
+                        individualImageIndexes.map((index) =>
+                            axios.get<Blob>(
+                                `/mj/image/${encodeURIComponent(taskId)}?index=${index}`,
+                                {
+                                    headers,
+                                    signal: options?.signal,
+                                    responseType: "blob",
+                                },
+                            ),
+                        ),
+                    );
+                    const fetchedBlobs = responses.map((item) => item.data);
+                    if (fetchedBlobs.every((blob) => blob && blob.type?.startsWith("image/"))) {
+                        imageBlobs = fetchedBlobs;
+                    }
+                } catch (error) {
+                    if (options?.signal?.aborted) throw error;
+                }
+            }
+
+            if (!imageBlobs.length) {
+                const imageResponse = await axios.get<Blob>(
+                    `/mj/image/${encodeURIComponent(taskId)}`,
+                    {
+                        headers,
+                        signal: options?.signal,
+                        responseType: "blob",
+                    },
+                );
+                if (!imageResponse.data?.type?.startsWith("image/")) {
+                    throw new Error(apiText("requestFailed"));
+                }
+                try {
+                    imageBlobs = await splitMidjourneyGrid(imageResponse.data);
+                } catch {
+                    imageBlobs = [imageResponse.data];
+                    usedOriginalGrid = true;
+                }
+            }
+
+            options?.signal?.throwIfAborted();
+            const stored = await Promise.all(
+                imageBlobs.map((blob) => uploadImage(blob, { signal: options?.signal })),
+            );
+            options?.signal?.throwIfAborted();
+
+            const images: GeneratedCanvasImage[] = stored.map((item) => ({
+                id: item.storageKey || nanoid(),
+                storageKey: item.storageKey,
+                url: item.url,
+                width: item.width,
+                height: item.height,
+                bytes: item.bytes,
+                mimeType: item.mimeType,
+                dataUrl: item.url,
+            }));
+
+            return { taskId, images, usedOriginalGrid };
+        }
+
+        if (status === "FAILURE" || status === "CANCELLED") {
+            throw new Error(task.failReason || apiText("requestFailed"));
+        }
+
+        await waitForMidjourneyPoll(pollIntervalMs, options?.signal);
+    }
+
+    throw new Error(apiText("requestFailed"));
+}
+
+async function executeMidjourneyImagine(
+    prompt: string,
+    base64Array: string[],
+    options?: RequestOptions,
+): Promise<GeneratedCanvasImage[]> {
+    const headers = await getCanvasAuthHeaders();
+    options?.signal?.throwIfAborted();
+
+    const response = await axios.post<MidjourneySubmitResponse>(
+        "/mj/submit/imagine",
+        {
+            prompt,
+            ...(base64Array.length ? { base64Array } : {}),
+        },
+        { headers, signal: options?.signal },
+    );
+
+    const taskId = response.data?.result;
+    if ((response.data?.code !== undefined && response.data.code !== 1) || !taskId) {
+        throw new Error(response.data?.description || apiText("requestFailed"));
+    }
+
+    options?.onTaskId?.(taskId);
+    const result = await pollMidjourneyTask(taskId, options);
+    const images = result.images;
+    (images as any).usedOriginalGrid = result.usedOriginalGrid;
+    return images;
+}
 
 const QUALITY_BASE: Record<string, number> = {
     low: 1024,
@@ -739,6 +918,9 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     const headers = await getCanvasAuthHeaders();
     options?.signal?.throwIfAborted();
     if (getCanvasHost().getUser()?.id !== userId) throw new Error(i18n.t("integration.sessionExpired"));
+    if (canvasModel?.protocol === "midjourney") {
+        return executeMidjourneyImagine(body.prompt, [], options);
+    }
     try {
         let endpoint = "/api/canvas/images/generations";
         let requestPayload: unknown = body;
@@ -825,7 +1007,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     buildCanvasImageEditRequest(config, prompt, config.models, references.length);
     const userId = useUserStore.getState().user?.id;
     const models = await fetchCanvasModels(options?.signal);
-    buildCanvasImageEditRequest(config, prompt, models, references.length);
+    const body = buildCanvasImageEditRequest(config, prompt, models, references.length);
 
     const canvasModel = getCanvasImageModel(config.model);
     const isGemini = canvasModel?.protocol === "gemini";
@@ -833,6 +1015,12 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const headers = await getCanvasAuthHeaders();
     options?.signal?.throwIfAborted();
     if (getCanvasHost().getUser()?.id !== userId) throw new Error(i18n.t("integration.sessionExpired"));
+
+    if (canvasModel?.protocol === "midjourney") {
+        const base64Array = await Promise.all(references.map((ref) => imageToDataUrl(ref)));
+        options?.signal?.throwIfAborted();
+        return executeMidjourneyImagine(body.prompt, base64Array, options);
+    }
 
     try {
         let endpoint = "/api/canvas/images/edits";

@@ -21,7 +21,7 @@ export type ImageOperation = {
 
 export type CanvasImageModel = {
     model: string;
-    protocol: "openai-image" | "gemini";
+    protocol: "openai-image" | "gemini" | "midjourney";
     supportsMaskEdit?: boolean;
     supportsOutputFormat?: boolean;
     operations: { generation?: ImageOperation; edit?: ImageOperation };
@@ -67,6 +67,7 @@ export const defaultImageEditSettings: ImageSettings = {
 
 const NANO_BANANA_ASPECT_RATIOS = ["1:1", "1:4", "4:1", "1:8", "8:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] as const;
 const GROK_IMAGINE_ASPECT_RATIOS = ["auto", "1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2", "9:19.5", "19.5:9", "9:20", "20:9", "1:2", "2:1"] as const;
+const MIDJOURNEY_ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2", "21:9"] as const;
 
 // 此处仅维护已接入的画布模型，不继承作图广场名单或上游渠道配置。
 export const canvasImageModels: readonly CanvasImageModel[] = [
@@ -226,6 +227,48 @@ export const canvasImageModels: readonly CanvasImageModel[] = [
             },
         },
     },
+    {
+        model: "mj_imagine",
+        protocol: "midjourney",
+        supportsMaskEdit: false,
+        operations: {
+            generation: {
+                sizing: {
+                    kind: "resolution-ratio",
+                    resolutions: [],
+                    aspectRatios: MIDJOURNEY_ASPECT_RATIOS,
+                },
+                maxOutputs: 1,
+                defaults: {
+                    model: "mj_imagine",
+                    resolution: "",
+                    aspectRatio: "1:1",
+                    quality: "",
+                    size: "",
+                    background: "",
+                    count: "1",
+                },
+            },
+            edit: {
+                sizing: {
+                    kind: "resolution-ratio",
+                    resolutions: [],
+                    aspectRatios: MIDJOURNEY_ASPECT_RATIOS,
+                },
+                maxOutputs: 1,
+                maxReferences: 3,
+                defaults: {
+                    model: "mj_imagine",
+                    resolution: "",
+                    aspectRatio: "1:1",
+                    quality: "",
+                    size: "",
+                    background: "",
+                    count: "1",
+                },
+            },
+        },
+    },
 ];
 
 export function getCanvasImageModel(model: string) {
@@ -252,7 +295,7 @@ export function imageSettingsIssues(settings: ImageSettings, available: readonly
             invalid.push(i18n.t("integration.settings.references"));
         }
     }
-    if (!capability.sizing.resolutions.includes(settings.resolution || "")) invalid.push(i18n.t("settingsPanels.image.resolution"));
+    if (capability.sizing.resolutions.length > 0 ? !capability.sizing.resolutions.includes(settings.resolution || "") : Boolean(settings.resolution)) invalid.push(i18n.t("settingsPanels.image.resolution"));
     if (!capability.sizing.aspectRatios.includes(settings.aspectRatio || "")) invalid.push(i18n.t("settingsPanels.image.aspectRatio"));
     if (settings.size) invalid.push(i18n.t("settingsPanels.image.size"));
     if (capability.qualities ? !capability.qualities.includes(settings.quality) : Boolean(settings.quality)) invalid.push(i18n.t("settingsPanels.image.quality"));
@@ -277,9 +320,14 @@ export function resolveImageSettings(global: ImageSettings, node?: Partial<Omit<
         const quality = node?.quality ?? global.quality;
         const count = Number(node?.count ?? global.count);
 
+        let resolvedResolution = defaults.resolution;
+        if (capability.sizing.resolutions.length > 0 && capability.sizing.resolutions.includes(resolution || "")) {
+            resolvedResolution = resolution;
+        }
+
         return {
             model,
-            resolution: capability.sizing.resolutions.includes(resolution || "") ? resolution : defaults.resolution,
+            resolution: resolvedResolution,
             aspectRatio: capability.sizing.aspectRatios.includes(aspectRatio || "") ? aspectRatio : defaults.aspectRatio,
             quality: capability.qualities ? (capability.qualities.includes(quality) ? quality : defaults.quality) : defaults.quality,
             size: "",
@@ -305,7 +353,7 @@ export function switchImageModel(current: ImageSettings, model: string) {
     const settings = { ...current, model };
     const adjusted: (keyof ImageSettings)[] = [];
     const allowed: Partial<Record<keyof ImageSettings, readonly string[]>> = {
-        resolution: capability.sizing.resolutions,
+        resolution: capability.sizing.resolutions.length > 0 ? capability.sizing.resolutions : [""],
         aspectRatio: capability.sizing.aspectRatios,
         quality: capability.qualities || [""],
         background: capability.backgrounds ? ["", ...capability.backgrounds] : [""],
@@ -324,17 +372,28 @@ export function switchImageModel(current: ImageSettings, model: string) {
     return { settings, adjusted };
 }
 
+function resolveEffectivePrompt(model: string, prompt: string, aspectRatio?: string): string {
+    const trimmed = prompt.trim();
+    const modelDef = getCanvasImageModel(model);
+    if (modelDef?.protocol === "midjourney" && !/(^|\s)--ar\s+\S+/.test(trimmed) && aspectRatio && aspectRatio !== "auto") {
+        return `${trimmed} --ar ${aspectRatio}`;
+    }
+    return trimmed;
+}
+
 export function buildCanvasImageRequest(settings: ImageSettings, prompt: string, available: readonly string[]) {
     const issues = imageSettingsIssues(settings, available);
     if (issues.length) throw new Error(issues.join("\n"));
     if (!prompt.trim()) throw new Error(i18n.t("integration.promptRequired"));
     const modelDef = getCanvasImageModel(settings.model);
     const supportsOutputFormat = Boolean(modelDef?.supportsOutputFormat ?? (modelDef?.model === "gpt-image-2"));
+    const effectivePrompt = resolveEffectivePrompt(settings.model, prompt, settings.aspectRatio);
+    const size = settings.resolution ? `${settings.aspectRatio} ${settings.resolution}` : `${settings.aspectRatio || "1:1"}`;
     return {
         model: settings.model,
-        prompt: prompt.trim(),
+        prompt: effectivePrompt,
         n: Number(settings.count),
-        size: `${settings.aspectRatio} ${settings.resolution}`,
+        size,
         ...(settings.quality ? { quality: settings.quality } : {}),
         ...(settings.background ? { background: settings.background } : {}),
         response_format: "b64_json",
@@ -347,14 +406,15 @@ export function buildCanvasImageEditRequest(settings: ImageSettings, prompt: str
     if (issues.length) throw new Error(issues.join("\n"));
     if (!prompt.trim()) throw new Error(i18n.t("integration.promptRequired"));
     const aspectRatio = settings.aspectRatio || "auto";
-    const resolution = settings.resolution || "1k";
     const modelDef = getCanvasImageModel(settings.model);
     const supportsOutputFormat = Boolean(modelDef?.supportsOutputFormat ?? (modelDef?.model === "gpt-image-2"));
+    const effectivePrompt = resolveEffectivePrompt(settings.model, prompt, settings.aspectRatio);
+    const size = settings.resolution ? `${aspectRatio} ${settings.resolution}` : aspectRatio;
     return {
         model: settings.model,
-        prompt: prompt.trim(),
+        prompt: effectivePrompt,
         n: Number(settings.count || 1),
-        size: `${aspectRatio} ${resolution}`,
+        size,
         ...(settings.quality ? { quality: settings.quality } : {}),
         response_format: "b64_json",
         ...(supportsOutputFormat ? { output_format: "png" } : {}),

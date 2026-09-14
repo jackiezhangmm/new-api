@@ -73,16 +73,18 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                                 </div>
                             </div>
                         ) : null}
-                        <div className="space-y-2.5">
-                            <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.resolution")}</SettingTitle>
-                            <div className="grid grid-cols-3 gap-2.5">
-                                {operation.sizing.resolutions.map((value) => (
-                                    <OptionPill key={value} selected={config.resolution === value} theme={theme} onClick={() => onConfigChange("resolution", value)}>
-                                        {value.toUpperCase()}
-                                    </OptionPill>
-                                ))}
+                        {operation.sizing.resolutions.length > 0 ? (
+                            <div className="space-y-2.5">
+                                <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.resolution")}</SettingTitle>
+                                <div className="grid grid-cols-3 gap-2.5">
+                                    {operation.sizing.resolutions.map((value) => (
+                                        <OptionPill key={value} selected={config.resolution === value} theme={theme} onClick={() => onConfigChange("resolution", value)}>
+                                            {value.toUpperCase()}
+                                        </OptionPill>
+                                    ))}
+                                </div>
                             </div>
-                        </div>
+                        ) : null}
                         <div className="space-y-2.5">
                             <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.aspectRatio")}</SettingTitle>
                             <div className="grid grid-cols-4 gap-2.5">

@@ -123,10 +123,14 @@ export function hasResumableVideoTask(node: CanvasNodeData) {
     return node.type === CanvasNodeType.Video && Boolean(node.metadata?.videoTaskId) && !node.metadata?.content;
 }
 
+export function hasResumableMjTask(node: CanvasNodeData) {
+    return node.type === CanvasNodeType.Image && Boolean(node.metadata?.mjTaskId) && !node.metadata?.content;
+}
+
 export function resetInterruptedGeneration(nodes: CanvasNodeData[]) {
     return nodes.map((node) =>
         node.metadata?.status === "loading"
-            ? hasResumableVideoTask(node)
+            ? hasResumableVideoTask(node) || hasResumableMjTask(node)
                 ? node
                 : {
                       ...node,

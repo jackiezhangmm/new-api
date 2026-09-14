@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { useImageGeneration } from "./hooks/use-image-generation";
 import { DEFAULT_AUXILIARY_TEXT_MODEL, getCanvasImageModel, switchImageModel } from "@/lib/canvas/image-models";
 import { canvasCapabilities, assertCanvasNodesAllowed } from "@/lib/canvas/canvas-capabilities";
-import { requestEdit } from "@/services/api/image";
+import { pollMidjourneyTask, requestEdit } from "@/services/api/image";
 import { isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
 import { defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { uploadImage } from "@/services/image-storage";
@@ -60,6 +60,7 @@ import {
     buildGenerationConfig,
     getGenerationCount,
     getInputSummary,
+    hasResumableMjTask,
     hasResumableVideoTask,
     hydrateAssistantImages,
     hydrateCanvasImages,
@@ -336,6 +337,7 @@ function InfiniteCanvasPage() {
     const pendingConnectionCreateRef = useRef(pendingConnectionCreate);
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
     const videoPollIdsRef = useRef(new Set<string>());
+    const mjPollIdsRef = useRef(new Set<string>());
     const { generate: handleGenerateNode, retry: handleRetryNode, stop: stopGenerationByRunningId, runningIds } = useImageGeneration({ projectId, config: effectiveConfig, nodes, nodesRef, connectionsRef, setNodes, setConnections });
     const runningIdsRef = useRef(runningIds);
     runningIdsRef.current = runningIds;
@@ -443,6 +445,98 @@ function InfiniteCanvasPage() {
         [effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, startGenerationRequest, t],
     );
 
+    const pollMjNodeTask = useCallback(
+        async (node: CanvasNodeData) => {
+            const taskId = node.metadata?.mjTaskId;
+            if (!taskId || node.metadata?.content || generationRequestsRef.current.has(node.id) || mjPollIdsRef.current.has(node.id)) return;
+            mjPollIdsRef.current.add(node.id);
+            let controller: AbortController | undefined;
+            try {
+                setRunningNodeId(node.id);
+                setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined } } : item)));
+                controller = startGenerationRequest(node.id, node.id, node.id);
+                const generated = await pollMidjourneyTask(taskId, {
+                    signal: controller.signal,
+                    onProgress: (progress) => {
+                        setNodes((prev) =>
+                            prev.map((item) =>
+                                item.id === node.id
+                                    ? { ...item, metadata: { ...item.metadata, progress } }
+                                    : item,
+                            ),
+                        );
+                    },
+                });
+                if (generated.usedOriginalGrid) {
+                    message.info(t("canvas.projectPage.fallbackGrid"));
+                }
+                setNodes((prev) =>
+                    prev.map((item) => {
+                        if (item.id !== node.id) return item;
+                        const stored = generated.images.map((img) => ({
+                            id: img.storageKey || img.id,
+                            status: "success" as const,
+                            content: img.url || "",
+                            storageKey: img.storageKey,
+                            naturalWidth: img.width || 0,
+                            naturalHeight: img.height || 0,
+                            bytes: img.bytes || 0,
+                            mimeType: img.mimeType || "",
+                        }));
+                        const primary = stored[0];
+                        if (!primary) return item;
+                        return {
+                            ...item,
+                            metadata: {
+                                ...item.metadata,
+                                generationId: undefined,
+                                mjTaskId: undefined,
+                                progress: undefined,
+                                status: NODE_STATUS_SUCCESS,
+                                errorDetails: undefined,
+                                images: stored,
+                                primaryImageId: primary.id,
+                                content: primary.content,
+                                storageKey: primary.storageKey,
+                                naturalWidth: primary.naturalWidth,
+                                naturalHeight: primary.naturalHeight,
+                                mimeType: primary.mimeType,
+                                bytes: primary.bytes,
+                            },
+                        };
+                    }),
+                );
+            } catch (error) {
+                if (isGenerationCanceled(error)) return;
+                const errorDetails = error instanceof Error ? error.message : t("canvas.projectPage.generationFailed");
+                message.error(errorDetails);
+                setNodes((prev) =>
+                    prev.map((item) =>
+                        item.id === node.id
+                            ? {
+                                  ...item,
+                                  metadata: {
+                                      ...item.metadata,
+                                      status: item.metadata?.content ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR,
+                                      errorDetails: item.metadata?.content ? undefined : errorDetails,
+                                      mjTaskId: undefined,
+                                      progress: undefined,
+                                  },
+                              }
+                            : item,
+                    ),
+                );
+            } finally {
+                mjPollIdsRef.current.delete(node.id);
+                if (controller) {
+                    finishGenerationRequest(node.id, controller);
+                    setRunningNodeId((current) => (current === node.id ? null : current));
+                }
+            }
+        },
+        [finishGenerationRequest, message, setNodes, startGenerationRequest, t],
+    );
+
     const confirmStopGeneration = useCallback(
         (nodeId: string) => {
             modal.confirm({
@@ -451,10 +545,34 @@ function InfiniteCanvasPage() {
                 okText: t("canvas.projectPage.stop"),
                 cancelText: t("canvas.projectPage.continue"),
                 okButtonProps: { danger: true },
-                onOk: () => stopGenerationByRunningId(nodeId),
+                onOk: () => {
+                    const request = generationRequestsRef.current.get(nodeId);
+                    if (request) {
+                        request.controller.abort();
+                        generationRequestsRef.current.delete(nodeId);
+                        setRunningNodeId(null);
+                        setNodes((prev) =>
+                            prev.map((item) =>
+                                item.id === nodeId
+                                    ? {
+                                          ...item,
+                                          metadata: {
+                                              ...item.metadata,
+                                              status: item.metadata?.content ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR,
+                                              errorDetails: t("common.requestCanceled"),
+                                              mjTaskId: undefined,
+                                              progress: undefined,
+                                          },
+                                      }
+                                    : item,
+                            ),
+                        );
+                    }
+                    stopGenerationByRunningId(nodeId);
+                },
             });
         },
-        [modal, stopGenerationByRunningId, t],
+        [modal, setNodes, stopGenerationByRunningId, t],
     );
 
     const getContentComparisonSnapshot = useCallback(
@@ -637,6 +755,7 @@ function InfiniteCanvasPage() {
     useEffect(() => {
         if (!canvasCapabilities.generation || !projectLoaded) return;
         nodesRef.current.filter(hasResumableVideoTask).forEach((node) => void pollVideoNodeTask(node, true));
+        nodesRef.current.filter(hasResumableMjTask).forEach((node) => void pollMjNodeTask(node));
         // Resume once after the current canvas is restored, not on later config identity changes.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [projectLoaded]);

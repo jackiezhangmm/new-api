@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runCanvasImageGeneration, runCanvasTextGeneration } from "../image-generation";
+import { hasResumableMjTask, resetInterruptedGeneration } from "../canvas-generation-helpers";
+import { buildNodeResponseMessages } from "@/components/canvas/canvas-node-generation";
+import { MIDJOURNEY_POLISH_TEMPLATE } from "@/services/api/prompts";
 import { defaultConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
@@ -505,5 +508,180 @@ test("M9 文本生成失败时将目标节点置为错误状态并记录错误�
     assert.equal(targetNode.metadata?.status, "success");
     assert.equal(targetNode.metadata?.content, "重试成功的内容");
     assert.equal(targetNode.metadata?.errorDetails, undefined);
+});
+
+test("Midjourney 异步任务生命周期：mjTaskId 与 progress 实时注入，成功后填充 4 图批次并清理临时标识", async () => {
+    let nodes: CanvasNodeData[] = [
+        { id: "source-mj", type: CanvasNodeType.Image, title: "source", position: { x: 0, y: 0 }, width: 340, height: 240, metadata: {} },
+    ];
+    let capturedTargetId = "";
+
+    const mjConfig = {
+        ...defaultConfig,
+        model: "mj_imagine",
+        models: ["mj_imagine"],
+        count: "1",
+        resolution: "",
+        quality: "",
+        aspectRatio: "16:9",
+    };
+
+    let triggerTaskId!: (taskId: string) => void;
+    let triggerProgress!: (progress: string) => void;
+    let completeTask!: (images: any[]) => void;
+
+    const taskPromise = new Promise<any[]>((resolve) => {
+        completeTask = resolve;
+    });
+
+    const runPromise = runCanvasImageGeneration(
+        {
+            sourceId: "source-mj",
+            prompt: "cyberpunk skyline",
+            config: mjConfig,
+            signal: new AbortController().signal,
+            getNodes: () => nodes,
+            setNodes: (update) => {
+                nodes = update(nodes);
+            },
+            addConnection: () => {},
+            onTarget: (targetId) => {
+                capturedTargetId = targetId;
+            },
+        },
+        {
+            generate: (async (_config: any, _prompt: any, options: any) => {
+                triggerTaskId = options?.onTaskId;
+                triggerProgress = options?.onProgress;
+                return taskPromise;
+            }) as any,
+            store: (async () => ({ url: "", storageKey: "", width: 0, height: 0, bytes: 0, mimeType: "" })) as any,
+        },
+    );
+
+    // 1. 验证生成初始状态
+    assert.ok(capturedTargetId);
+    let targetNode = nodes.find((n) => n.id === capturedTargetId);
+    assert.ok(targetNode);
+    assert.equal(targetNode.metadata?.status, "loading");
+    assert.equal(targetNode.metadata?.images?.length, 1);
+
+    // 2. 模拟上游返回 taskId，节点 metadata.mjTaskId 实时写入
+    triggerTaskId("task-mj-async-999");
+    targetNode = nodes.find((n) => n.id === capturedTargetId);
+    assert.equal(targetNode?.metadata?.mjTaskId, "task-mj-async-999");
+
+    // 3. 模拟轮询汇报进度，节点 metadata.progress 实时更新
+    triggerProgress("45%");
+    targetNode = nodes.find((n) => n.id === capturedTargetId);
+    assert.equal(targetNode?.metadata?.progress, "45%");
+
+    // 4. 模拟出图完成（切分出 4 张独立图）
+    completeTask([
+        { id: "img-1", storageKey: "key-1", url: "https://example.com/1.png", width: 1024, height: 1024, bytes: 100, mimeType: "image/png" },
+        { id: "img-2", storageKey: "key-2", url: "https://example.com/2.png", width: 1024, height: 1024, bytes: 100, mimeType: "image/png" },
+        { id: "img-3", storageKey: "key-3", url: "https://example.com/3.png", width: 1024, height: 1024, bytes: 100, mimeType: "image/png" },
+        { id: "img-4", storageKey: "key-4", url: "https://example.com/4.png", width: 1024, height: 1024, bytes: 100, mimeType: "image/png" },
+    ]);
+
+    await runPromise;
+
+    targetNode = nodes.find((n) => n.id === capturedTargetId);
+    assert.ok(targetNode);
+    assert.equal(targetNode.metadata?.status, "success");
+    assert.equal(targetNode.metadata?.mjTaskId, undefined);
+    assert.equal(targetNode.metadata?.progress, undefined);
+    assert.equal(targetNode.metadata?.images?.length, 4);
+    assert.equal(targetNode.metadata?.primaryImageId, "img-1");
+    assert.equal(targetNode.metadata?.storageKey, "key-1");
+    assert.equal(targetNode.metadata?.content, "https://example.com/1.png");
+});
+
+test("Midjourney 断点保护：resetInterruptedGeneration 保护在途 mjTaskId 节点不被重置为错误", () => {
+    const regularLoadingNode: CanvasNodeData = {
+        id: "node-regular-loading",
+        type: CanvasNodeType.Image,
+        title: "regular loading",
+        position: { x: 0, y: 0 },
+        width: 340,
+        height: 240,
+        metadata: {
+            status: "loading",
+            model: "gpt-image-2",
+        },
+    };
+
+    const inFlightMjNode: CanvasNodeData = {
+        id: "node-mj-in-flight",
+        type: CanvasNodeType.Image,
+        title: "midjourney in flight",
+        position: { x: 100, y: 0 },
+        width: 340,
+        height: 240,
+        metadata: {
+            status: "loading",
+            model: "mj_imagine",
+            mjTaskId: "task-resumable-123",
+        },
+    };
+
+    const completedMjNode: CanvasNodeData = {
+        id: "node-mj-completed",
+        type: CanvasNodeType.Image,
+        title: "midjourney completed",
+        position: { x: 200, y: 0 },
+        width: 340,
+        height: 240,
+        metadata: {
+            status: "loading",
+            model: "mj_imagine",
+            mjTaskId: "task-completed-456",
+            content: "https://example.com/already-have-image.png",
+        },
+    };
+
+    // 1. hasResumableMjTask 判定
+    assert.equal(hasResumableMjTask(inFlightMjNode), true);
+    assert.equal(hasResumableMjTask(regularLoadingNode), false);
+    assert.equal(hasResumableMjTask(completedMjNode), false); // 已有 content 的不再重复轮询
+
+    // 2. resetInterruptedGeneration 行为
+    const resetNodes = resetInterruptedGeneration([regularLoadingNode, inFlightMjNode, completedMjNode]);
+
+    // 普通 loading 节点因离开页面而被置为 error
+    const resetRegular = resetNodes.find((n) => n.id === "node-regular-loading");
+    assert.equal(resetRegular?.metadata?.status, "error");
+
+    // 在途 Midjourney 任务节点受到保护，保持 loading 状态供页面挂载后静默续接
+    const protectedMj = resetNodes.find((n) => n.id === "node-mj-in-flight");
+    assert.equal(protectedMj?.metadata?.status, "loading");
+    assert.equal(protectedMj?.metadata?.mjTaskId, "task-resumable-123");
+});
+
+test("提示词润色模板动态装配：当活动模型为 mj_imagine 时，文本生成消息自动注入 Midjourney 专用提示词改写模板", () => {
+    const context = {
+        prompt: "cyberpunk warrior girl",
+        referenceImages: [],
+        referenceVideos: [],
+        referenceAudios: [],
+        textCount: 0,
+        imageCount: 0,
+        videoCount: 0,
+        audioCount: 0,
+    };
+
+    // 1. 普通模型无额外系统提示词
+    const regularMessages = buildNodeResponseMessages(context, { model: "gpt-image-2" });
+    assert.equal(regularMessages.length, 1);
+    assert.equal(regularMessages[0].role, "user");
+    assert.equal(regularMessages[0].content, "cyberpunk warrior girl");
+
+    // 2. 当模型为 mj_imagine 时，自动装配 MIDJOURNEY_POLISH_TEMPLATE 为 system 消息
+    const mjMessages = buildNodeResponseMessages(context, { model: "mj_imagine" });
+    assert.equal(mjMessages.length, 2);
+    assert.equal(mjMessages[0].role, "system");
+    assert.equal(mjMessages[0].content, MIDJOURNEY_POLISH_TEMPLATE);
+    assert.equal(mjMessages[1].role, "user");
+    assert.equal(mjMessages[1].content, "cyberpunk warrior girl");
 });
 

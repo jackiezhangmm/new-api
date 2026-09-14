@@ -24,6 +24,26 @@ export const BULULU_FEATURED_SOURCE_ID = "bululu-featured";
 export const FEATURED_PROMPTS_QUERY_KEY = ["featured-prompts"] as const;
 const FEATURED_PROMPTS_STALE_TIME = 5 * 60 * 1000;
 
+export const MIDJOURNEY_POLISH_TEMPLATE = `任务：
+将用户提供的提示词，改写为专业的Midjourney英文提示词
+
+可选参数：
+--niji：Niji 开关
+--ar：画面比例，1:1 / 16:9 / 2:3 / 9:16 等
+--q：渲染质量，0.25 / 0.5 / 1 / 2
+--hd：HD 高清
+--style：风格：“raw”等
+--s：风格化强度，0–1000
+--c：混乱度，0–100
+--w：怪异度，0–3000
+--iw：图片权重，0–3
+--cw：角色权重，0–100
+--sw：风格权重，0–1000
+--seed：固定种子
+
+用户输入：
+<input>`;
+
 export type PromptListResponse = {
     items: Prompt[];
     tags: string[];

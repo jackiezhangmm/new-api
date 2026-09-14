@@ -28,7 +28,9 @@ type ImageSettingsPanelProps = {
 
 export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "space-y-4" }: ImageSettingsPanelProps) {
     const { t } = useTranslation();
-    const operation = getCanvasImageModel(config.model)?.operations.generation;
+    const modelDef = getCanvasImageModel(config.model);
+    const operation = modelDef?.operations.generation;
+    const isMidjourney = modelDef?.protocol === "midjourney";
     const issues = imageSettingsIssues(config, config.models);
     const count = Number(config.count) || 1;
 
@@ -109,11 +111,15 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                             </div>
                         ) : null}
                         <div className="space-y-2.5">
-                            <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.count")}</SettingTitle>
-                            <div className="grid grid-cols-4 gap-2.5">
+                            <SettingTitle color={theme.node.muted}>
+                                {isMidjourney ? t("settingsPanels.image.countGroup") : t("settingsPanels.image.count")}
+                            </SettingTitle>
+                            <div className={isMidjourney ? "flex gap-2.5" : "grid grid-cols-4 gap-2.5"}>
                                 {Array.from({ length: operation.maxOutputs }, (_, index) => index + 1).map((value) => (
                                     <OptionPill key={value} selected={count === value} theme={theme} onClick={() => onConfigChange("count", String(value))}>
-                                        {t("settingsPanels.image.images", { count: value })}
+                                        {isMidjourney
+                                            ? t("settingsPanels.image.groups", { count: value })
+                                            : t("settingsPanels.image.images", { count: value })}
                                     </OptionPill>
                                 ))}
                             </div>
@@ -154,7 +160,7 @@ function OptionPill({ selected, theme, onClick, children }: { selected: boolean;
         <button
             type="button"
             aria-pressed={selected}
-            className="h-9 cursor-pointer rounded-full border px-2 text-sm transition hover:opacity-80"
+            className="h-9 cursor-pointer rounded-full border px-3 text-sm transition hover:opacity-80"
             style={{ borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text, background: selected ? theme.node.fill : "transparent" }}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={onClick}

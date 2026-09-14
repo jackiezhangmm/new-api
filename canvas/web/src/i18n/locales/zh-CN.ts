@@ -49,7 +49,7 @@ export default {
     },
     settingsPanels: {
         common: { auto: "自动", low: "低", medium: "中", high: "高", xhigh: "极高" },
-        image: { title: "图像设置", quality: "质量", size: "尺寸", align16: "16 倍数对齐", align16Hint: "输入完成后自动向上补成 16 的倍数", resolution: "分辨率", aspectRatio: "宽高比", transparent: "透明背景", transparentHint: "开启后生成无背景的透明图像（仅部分模型可用）", count: "生成张数", images: "{{count}} 张" },
+        image: { title: "图像设置", quality: "质量", size: "尺寸", align16: "16 倍数对齐", align16Hint: "输入完成后自动向上补成 16 的倍数", resolution: "分辨率", aspectRatio: "宽高比", transparent: "透明背景", transparentHint: "开启后生成无背景的透明图像（仅部分模型可用）", count: "生成张数", countGroup: "生成组数", images: "{{count}} 张", groups: "{{count}} 组（4张）" },
         video: { title: "视频设置", quality: "清晰度", size: "尺寸", seconds: "秒数", mode: "模式", modes: { frames: "首尾帧模式", reference: "全能参考模式" }, resolution: "分辨率", ratio: "比例", duration: "时长", smart: "智能", output: "输出", generateAudio: "生成声音", watermark: "添加水印", adaptive: "自适应", sizes: { landscape: "横屏", portrait: "竖屏", square: "方形", widescreen: "宽屏", tall: "长图", auto: "自动" }, ratios: { landscape: "横屏", portrait: "竖屏", square: "方形", standardLandscape: "标准横屏", standardPortrait: "标准竖屏", cinematic: "宽银幕", adaptive: "自适应" } },
         audio: { title: "音频设置", voice: "声音", format: "格式", speed: "语速", instructions: "声音指令", instructionsPlaceholder: "例如：自然、温暖、适合旁白。" },
         text: { title: "文本设置", reasoning: "推理强度", count: "生成次数" },
@@ -338,7 +338,7 @@ export default {
         promptPanel: { video: "描述要生成的视频内容", audio: "描述要生成的音频内容", image: "描述要生成的图片内容", text: "请输入你想要生成的文本内容", editImage: "请输入你想要把这张图修改成什么", editText: "请输入你想要将本段文本修改成什么", expandEditor: "放大编辑", editorTitle: "编辑提示词", stopGeneration: "停止生成", generate: "生成", stop: "停止" },
         references: { title: "参考内容", select: "从画布选择参考节点", disconnect: "断开参考连接", empty: "暂无内容", selecting: "正在添加参考", choose: "选择", selectingHint: "从画布选择参考 · ESC 返回输入框" },
         composer: { title: "组装提示词", description: "@ 引用已连接资产，发送前按当前连接重新编号", placeholder: "输入提示词，按 @ 引用连接的图片、文本或组", imagePreview: "引用图片预览", resources: { image: "图片{{index}}", video: "视频{{index}}", audio: "音频{{index}}", text: "文本{{index}}", group: "组{{index}}" } },
-        controls: { ratio: "比例", duplicate: "复制", delete: "删除", images: "{{count}} 张", texts: "{{count}} 条", generations: "{{count}} 次", reasoning: "推理" },
+        controls: { ratio: "比例", duplicate: "复制", delete: "删除", images: "{{count}} 张", groups: "{{count}} 组", texts: "{{count}} 条", generations: "{{count}} 次", reasoning: "推理" },
         generation: { interrupted: "页面刷新后生成已中断，请重新生成。", front: "正面视角", rotateRight: "向右旋转 {{angle}} 度", rotateLeft: "向左旋转 {{angle}} 度", level: "水平视角", topDown: "俯视 {{angle}} 度", lowAngle: "仰视 {{angle}} 度", angleLabel: "AI 多角度：{{horizontal}}，{{pitch}}，镜头距离 {{distance}}，{{lens}}镜头", anglePrompt: "基于参考图重新生成同一主体的新视角，保持主体、颜色、材质和画面风格一致，不要只做透视变形。{{angle}}。" },
         agentOps: { add_node: "新增节点", update_node: "更新节点", delete_node: "删除节点", delete_connections: "删除连线", connect_nodes: "连接", set_viewport: "调整视图", select_nodes: "选择节点", run_generation: "触发生成" },
         pluginErrors: { invalidExport: "插件未导出有效对象", missingFields: "插件缺少 id 或 nodes", downloadFailed: "下载失败 (HTTP {{status}})", registryFailed: "获取官方插件列表失败 (HTTP {{status}})" },

@@ -29,9 +29,11 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
     const quality = config.quality;
     const count = Number(config.count) || 1;
+    const isMidjourney = config.model === "mj_imagine";
     const ratioLabel = imageAspectLabel(config.aspectRatio);
     const sizeSummary = [config.resolution?.toUpperCase(), ratioLabel].filter(Boolean).join(" · ");
-    const summary = [imageQualityLabel(quality), sizeSummary, t("canvas.controls.images", { count })].filter(Boolean).join(" · ");
+    const countSummary = isMidjourney ? t("canvas.controls.groups", { count }) : t("canvas.controls.images", { count });
+    const summary = [imageQualityLabel(quality), sizeSummary, countSummary].filter(Boolean).join(" · ");
     const updateOpen = (nextOpen: boolean) => {
         setOpen(nextOpen);
         onOpenChange?.(nextOpen);

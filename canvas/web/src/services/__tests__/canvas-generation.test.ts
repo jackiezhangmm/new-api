@@ -243,3 +243,131 @@ test("M9 辅助文本调用通过宿主认证直连 /v1/chat/completions 流式�
     }
 });
 
+test("多协议服务端分流：nano-banana-2 路由至 Gemini 端点，grok 路由至 OpenAI 端点，且支持安全审查拦截提示", async () => {
+    const fetchBefore = globalThis.fetch;
+    const postBefore = axios.post;
+    const windowBefore = globalThis.window;
+    const account = "903";
+    useUserStore.setState({ user: { id: account, username: "test-multimodel", displayName: "", avatarUrl: "" } });
+    globalThis.window = {
+        parent: {
+            newApiCanvasHost: {
+                getUser: () => ({ id: account }),
+                getAuthHeaders: async () => ({ Authorization: "Bearer session-token-multi" }),
+                subscribe: () => () => {},
+            },
+        },
+    } as unknown as Window & typeof globalThis;
+
+    globalThis.fetch = (async (url: string | URL | Request) => {
+        const urlStr = String(url);
+        if (urlStr === "/api/user/models") {
+            return new Response(JSON.stringify({ success: true, data: ["nano-banana-2", "nano-banana-2-lite", "grok-imagine-image-2.0", "gpt-image-2"] }));
+        }
+        return new Response("Not Found", { status: 404 });
+    }) as typeof fetch;
+
+    let postedUrl = "";
+    let postedBody: any = null;
+    let postedHeaders: any = null;
+
+    axios.post = (async (url: unknown, body: unknown, options: unknown) => {
+        postedUrl = String(url);
+        postedBody = body;
+        postedHeaders = (options as any)?.headers;
+        return {
+            data: {
+                success: true,
+                data: [{ id: "res-gemini-1", url: "https://example.test/gemini-out.png", width: 1024, height: 1024, bytes: 5000, mime_type: "image/png" }],
+            },
+        };
+    }) as typeof axios.post;
+
+    try {
+        // 1. nano-banana-2 文生图调用 -> /api/canvas/images/gemini/models/nano-banana-2:generateContent
+        const bananaConfig = {
+            ...defaultConfig,
+            model: "nano-banana-2",
+            resolution: "2k",
+            aspectRatio: "16:9",
+            quality: "",
+            count: "1",
+            models: ["nano-banana-2"],
+        };
+        const bananaResult = await requestGeneration(bananaConfig, "banana in space");
+        assert.equal(postedUrl, "/api/canvas/images/gemini/models/nano-banana-2:generateContent");
+        assert.equal(postedHeaders?.Authorization, "Bearer session-token-multi");
+        assert.deepEqual(postedBody.contents, [{ parts: [{ text: "banana in space" }] }]);
+        assert.deepEqual(postedBody.generationConfig, {
+            responseModalities: ["IMAGE"],
+            imageConfig: {
+                aspectRatio: "16:9",
+                imageSize: "2K",
+            },
+        });
+        assert.equal(bananaResult[0].url, "https://example.test/gemini-out.png");
+        assert.equal(bananaResult[0].storageKey, "res-gemini-1");
+
+        // 2. nano-banana-2 图生图编辑调用 -> 组装多图 parts 并在 Gemini 端点调用
+        const refImage1 = { id: "ref-b1", name: "b1.png", type: "image/png", dataUrl: "data:image/png;base64,QUJDRA==", storageKey: "ref-b1" };
+        const refImage2 = { id: "ref-b2", name: "b2.png", type: "image/png", dataUrl: "data:image/png;base64,RUZHSA==", storageKey: "ref-b2" };
+        const bananaEditResult = await requestEdit(
+            { ...bananaConfig, aspectRatio: "auto" },
+            "blend two images",
+            [refImage1, refImage2],
+        );
+        assert.equal(postedUrl, "/api/canvas/images/gemini/models/nano-banana-2:generateContent");
+        assert.equal(postedBody.contents[0].parts.length, 3);
+        assert.ok(postedBody.contents[0].parts[0].text.includes("blend two images"));
+        assert.ok(postedBody.contents[0].parts[0].text.includes("图片1"));
+        assert.deepEqual(postedBody.contents[0].parts[1], { inlineData: { mimeType: "image/png", data: "QUJDRA==" } });
+        assert.deepEqual(postedBody.contents[0].parts[2], { inlineData: { mimeType: "image/png", data: "RUZHSA==" } });
+        assert.equal(bananaEditResult.length, 1);
+
+        // 3. grok-imagine-image-2.0 调用 -> /api/canvas/images/generations
+        const grokConfig = {
+            ...defaultConfig,
+            model: "grok-imagine-image-2.0",
+            resolution: "2k",
+            aspectRatio: "16:9",
+            quality: "medium",
+            count: "5",
+            models: ["grok-imagine-image-2.0"],
+        };
+        await requestGeneration(grokConfig, "grok art");
+        assert.equal(postedUrl, "/api/canvas/images/generations");
+        assert.equal(postedBody.model, "grok-imagine-image-2.0");
+        assert.equal(postedBody.n, 5);
+        assert.equal(postedBody.quality, "medium");
+
+        // 4. Gemini 上游安全审查拦截拦截（返回 promptFeedback.blockReason）
+        axios.post = (async () => ({
+            data: {
+                promptFeedback: { blockReason: "SAFETY" },
+            },
+        })) as typeof axios.post;
+
+        await assert.rejects(
+            () => requestGeneration(bananaConfig, "sensitive prompt"),
+            /安全审查拦截：SAFETY/,
+        );
+
+        // 5. Gemini 候选回复文本拒绝（candidates finishReason SAFETY）
+        axios.post = (async () => ({
+            data: {
+                candidates: [{ finishReason: "SAFETY", content: { parts: [{ text: "无法生成包含敏感信息的图片" }] } }],
+            },
+        })) as typeof axios.post;
+
+        await assert.rejects(
+            () => requestGeneration(bananaConfig, "sensitive prompt 2"),
+            /无法生成包含敏感信息的图片/,
+        );
+    } finally {
+        globalThis.fetch = fetchBefore;
+        axios.post = postBefore;
+        globalThis.window = windowBefore;
+        useUserStore.setState({ user: null });
+    }
+});
+

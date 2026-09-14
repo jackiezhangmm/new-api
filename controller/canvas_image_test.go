@@ -83,6 +83,7 @@ func setupCanvasImageTestEnv(t *testing.T, driver service.StorageDriver) *gin.En
 	)
 	canvasRoute.POST("/images/generations", CanvasGenerateImages)
 	canvasRoute.POST("/images/edits", CanvasEditImages)
+	canvasRoute.POST("/images/gemini/models/*path", CanvasGenerateGeminiImages)
 
 	return engine
 }
@@ -762,4 +763,197 @@ func TestCanvasEditImages_UpstreamError(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Contains(t, w.Body.String(), "edit prompt policy violation")
+}
+
+func TestCanvasGenerateGeminiImages_Unauthenticated(t *testing.T) {
+	mockDriver := &mockStorageDriver{configured: true}
+	engine := setupCanvasImageTestEnv(t, mockDriver)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/canvas/images/gemini/models/nano-banana-2:generateContent", strings.NewReader(`{"contents":[{"parts":[{"text":"a sunset"}]}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestCanvasGenerateGeminiImages_StorageUnconfigured(t *testing.T) {
+	mockDriver := &mockStorageDriver{configured: false}
+	engine := setupCanvasImageTestEnv(t, mockDriver)
+
+	_, accessToken := createCanvasSession(t, "canvas-user-gemini-unconf", 10_000_000)
+
+	baseURL := "https://api.example.com"
+	channel := &model.Channel{
+		Type:    constant.ChannelTypeGemini,
+		Key:     "upstream-gemini-key",
+		Status:  common.ChannelStatusEnabled,
+		Name:    "gemini-unconf-channel",
+		BaseURL: &baseURL,
+		Models:  "nano-banana-2",
+		Group:   "default",
+		AutoBan: common.GetPointer(0),
+	}
+	require.NoError(t, model.DB.Create(channel).Error)
+	require.NoError(t, model.DB.Create(&model.Ability{
+		Group: "default", Model: "nano-banana-2", ChannelId: channel.Id, Enabled: true,
+	}).Error)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/canvas/images/gemini/models/nano-banana-2:generateContent", strings.NewReader(`{"contents":[{"parts":[{"text":"a sunset"}]}]}`))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), "对象存储未配置或不可用")
+}
+
+func TestCanvasGenerateGeminiImages_Success_Single_Base64(t *testing.T) {
+	mockDriver := &mockStorageDriver{configured: true}
+	engine := setupCanvasImageTestEnv(t, mockDriver)
+
+	pngBytes := generateValidPNG(t, 256, 256)
+	b64Img := base64.StdEncoding.EncodeToString(pngBytes)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Contains(t, r.URL.Path, "/v1beta/models/nano-banana-2:generateContent")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"%s"}}]}}]}`, b64Img)))
+	}))
+	defer upstream.Close()
+
+	user, accessToken := createCanvasSession(t, "canvas-user-gemini-single", 10_000_000)
+
+	baseURL := upstream.URL
+	channel := &model.Channel{
+		Type:    constant.ChannelTypeGemini,
+		Key:     "upstream-gemini-key",
+		Status:  common.ChannelStatusEnabled,
+		Name:    "gemini-single-channel",
+		BaseURL: &baseURL,
+		Models:  "nano-banana-2",
+		Group:   "default",
+		AutoBan: common.GetPointer(0),
+	}
+	require.NoError(t, model.DB.Create(channel).Error)
+	require.NoError(t, model.DB.Create(&model.Ability{
+		Group: "default", Model: "nano-banana-2", ChannelId: channel.Id, Enabled: true,
+	}).Error)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/canvas/images/gemini/models/nano-banana-2:generateContent", strings.NewReader(`{"contents":[{"parts":[{"text":"a banana sunset"}]}]}`))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var resp struct {
+		Success bool                  `json:"success"`
+		Data    []UploadImageResponse `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(w.Body.Bytes(), &resp))
+	require.True(t, resp.Success)
+	require.Len(t, resp.Data, 1)
+
+	imgItem := resp.Data[0]
+	assert.NotEmpty(t, imgItem.Id)
+	assert.Equal(t, 256, imgItem.Width)
+	assert.Equal(t, 256, imgItem.Height)
+	assert.Equal(t, int64(len(pngBytes)), imgItem.Bytes)
+	assert.Equal(t, "image/png", imgItem.MimeType)
+	assert.True(t, strings.HasPrefix(imgItem.URL, "https://cdn.example.com/images/"))
+
+	// 验证 S3 Driver 接收到正确的 PutObject
+	mockDriver.mu.Lock()
+	uploadedData, exists := mockDriver.uploaded[fmt.Sprintf("images/%d/%s.png", user.Id, imgItem.Id)]
+	mockDriver.mu.Unlock()
+	require.True(t, exists, "S3 driver 必须包含上传的对象")
+	assert.Equal(t, pngBytes, uploadedData)
+
+	// 验证数据库 images 表成功落库记录
+	dbImg, err := model.GetImageById(imgItem.Id)
+	require.NoError(t, err)
+	assert.Equal(t, user.Id, dbImg.UserId)
+	assert.Equal(t, 256, dbImg.Width)
+	assert.Equal(t, 256, dbImg.Height)
+	assert.Equal(t, int64(len(pngBytes)), dbImg.Bytes)
+	assert.Equal(t, "image/png", dbImg.MimeType)
+}
+
+func TestCanvasGenerateGeminiImages_UpstreamError_400(t *testing.T) {
+	mockDriver := &mockStorageDriver{configured: true}
+	engine := setupCanvasImageTestEnv(t, mockDriver)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"code":400,"message":"prompt violates policy","status":"INVALID_ARGUMENT"}}`))
+	}))
+	defer upstream.Close()
+
+	_, accessToken := createCanvasSession(t, "canvas-user-gemini-err", 10_000_000)
+
+	baseURL := upstream.URL
+	channel := &model.Channel{
+		Type:    constant.ChannelTypeGemini,
+		Key:     "upstream-gemini-key",
+		Status:  common.ChannelStatusEnabled,
+		Name:    "gemini-err-channel",
+		BaseURL: &baseURL,
+		Models:  "nano-banana-2",
+		Group:   "default",
+		AutoBan: common.GetPointer(0),
+	}
+	require.NoError(t, model.DB.Create(channel).Error)
+	require.NoError(t, model.DB.Create(&model.Ability{
+		Group: "default", Model: "nano-banana-2", ChannelId: channel.Id, Enabled: true,
+	}).Error)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/canvas/images/gemini/models/nano-banana-2:generateContent", strings.NewReader(`{"contents":[{"parts":[{"text":"bad prompt"}]}]}`))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "prompt violates policy")
+}
+
+func TestCanvasGenerateGeminiImages_UpstreamSafetyBlocked_200(t *testing.T) {
+	mockDriver := &mockStorageDriver{configured: true}
+	engine := setupCanvasImageTestEnv(t, mockDriver)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"candidates":[{"finishReason":"SAFETY","index":0}],"promptFeedback":{"blockReason":"SAFETY"}}`))
+	}))
+	defer upstream.Close()
+
+	_, accessToken := createCanvasSession(t, "canvas-user-gemini-safety", 10_000_000)
+
+	baseURL := upstream.URL
+	channel := &model.Channel{
+		Type:    constant.ChannelTypeGemini,
+		Key:     "upstream-gemini-key",
+		Status:  common.ChannelStatusEnabled,
+		Name:    "gemini-safety-channel",
+		BaseURL: &baseURL,
+		Models:  "nano-banana-2",
+		Group:   "default",
+		AutoBan: common.GetPointer(0),
+	}
+	require.NoError(t, model.DB.Create(channel).Error)
+	require.NoError(t, model.DB.Create(&model.Ability{
+		Group: "default", Model: "nano-banana-2", ChannelId: channel.Id, Enabled: true,
+	}).Error)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/canvas/images/gemini/models/nano-banana-2:generateContent", strings.NewReader(`{"contents":[{"parts":[{"text":"sensitive prompt"}]}]}`))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"blockReason":"SAFETY"`)
 }

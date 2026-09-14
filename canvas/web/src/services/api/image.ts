@@ -1,5 +1,5 @@
 import { requireCanvasCapability } from "@/lib/canvas/canvas-capabilities";
-import { buildCanvasImageEditRequest, buildCanvasImageRequest, DEFAULT_AUXILIARY_TEXT_MODEL } from "@/lib/canvas/image-models";
+import { buildCanvasImageEditRequest, buildCanvasImageRequest, DEFAULT_AUXILIARY_TEXT_MODEL, getCanvasImageModel } from "@/lib/canvas/image-models";
 import { fetchCanvasModels, getCanvasAuthHeaders, getCanvasHost } from "@/services/host-auth";
 import { useUserStore } from "@/stores/use-user-store";
 import axios from "axios";
@@ -288,7 +288,22 @@ function readApiErrorMessage(value: unknown): string {
         }
     }
     if (typeof value !== "object") return "";
-    const payload = value as { msg?: unknown; message?: unknown; error?: unknown; detail?: unknown };
+    const payload = value as {
+        msg?: unknown;
+        message?: unknown;
+        error?: unknown;
+        detail?: unknown;
+        promptFeedback?: { blockReason?: string };
+        candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    if (payload.candidates?.[0]?.finishReason && payload.candidates[0].finishReason !== "STOP") {
+        const candidateText = payload.candidates[0].content?.parts?.find((p) => p.text)?.text;
+        if (candidateText) return candidateText;
+        return apiText("safetyBlocked", { reason: payload.candidates[0].finishReason });
+    }
+    if (payload.promptFeedback?.blockReason) {
+        return apiText("safetyBlocked", { reason: payload.promptFeedback.blockReason });
+    }
     // error may be a string or an object containing a message.
     const errorMsg = typeof payload.error === "string" ? payload.error : (payload.error as { message?: unknown })?.message;
     return readApiErrorMessage(payload.msg) || readApiErrorMessage(payload.message) || readApiErrorMessage(errorMsg) || readApiErrorMessage(payload.detail) || "";
@@ -717,13 +732,35 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     const userId = useUserStore.getState().user?.id;
     const models = await fetchCanvasModels(options?.signal);
     const body = buildCanvasImageRequest(config, prompt, models);
+
+    const canvasModel = getCanvasImageModel(config.model);
+    const isGemini = canvasModel?.protocol === "gemini";
+
     const headers = await getCanvasAuthHeaders();
     options?.signal?.throwIfAborted();
     if (getCanvasHost().getUser()?.id !== userId) throw new Error(i18n.t("integration.sessionExpired"));
     try {
+        let endpoint = "/api/canvas/images/generations";
+        let requestPayload: unknown = body;
+
+        if (isGemini) {
+            endpoint = `/api/canvas/images/gemini/models/${encodeURIComponent(config.model)}:generateContent`;
+            const [aspectRatio, imageSize] = config.aspectRatio && config.resolution ? [config.aspectRatio, config.resolution] : (body.size?.split(" ") ?? []);
+            requestPayload = {
+                contents: [{ parts: [{ text: prompt.trim() }] }],
+                generationConfig: {
+                    responseModalities: ["IMAGE"],
+                    imageConfig: {
+                        ...(aspectRatio && aspectRatio !== "auto" ? { aspectRatio } : {}),
+                        ...(imageSize ? { imageSize: imageSize.toUpperCase() } : {}),
+                    },
+                },
+            };
+        }
+
         const response = await axios.post<{
-            success: boolean;
-            data: Array<{
+            success?: boolean;
+            data?: Array<{
                 id: string;
                 url: string;
                 width: number;
@@ -732,12 +769,19 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 mime_type: string;
             }>;
             message?: string;
-        }>("/api/canvas/images/generations", body, { headers, signal: options?.signal });
+            promptFeedback?: { blockReason?: string };
+            candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string }> } }>;
+            error?: { message?: string };
+        }>(endpoint, requestPayload, { headers, signal: options?.signal });
         options?.signal?.throwIfAborted();
         if (getCanvasHost().getUser()?.id !== userId || useUserStore.getState().user?.id !== userId) throw new Error(i18n.t("integration.sessionExpired"));
         const payload = response.data;
         if (!payload || typeof payload !== "object" || !payload.success || !Array.isArray(payload.data)) {
-            throw new Error(payload?.message || i18n.t("integration.invalidResponse"));
+            const candidateText = payload?.candidates?.[0]?.content?.parts?.find((p) => p.text)?.text;
+            const blockReason = payload?.promptFeedback?.blockReason || (payload?.candidates?.[0]?.finishReason && payload?.candidates?.[0]?.finishReason !== "STOP" ? payload?.candidates?.[0]?.finishReason : undefined);
+            const upstreamError = payload?.error?.message;
+            const failMessage = candidateText || (blockReason ? apiText("safetyBlocked", { reason: blockReason }) : upstreamError || payload?.message || i18n.t("integration.invalidResponse"));
+            throw new Error(failMessage);
         }
         if (!payload.data.length) throw new Error(i18n.t("integration.invalidResponse"));
         return payload.data.map((item) => ({
@@ -783,42 +827,69 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const models = await fetchCanvasModels(options?.signal);
     buildCanvasImageEditRequest(config, prompt, models, references.length);
 
-    const files = await Promise.all(
-        references.map(async (ref) => {
-            try {
-                return await loadReferenceImageFile(ref, options?.signal);
-            } catch (err) {
-                options?.signal?.throwIfAborted();
-                throw new Error(apiText("referenceImageReadFailed"));
-            }
-        }),
-    );
-    options?.signal?.throwIfAborted();
-
-    const formData = new FormData();
-    formData.set("model", config.model || config.imageModel || "gpt-image-2");
-    const requestPrompt = buildImageReferencePromptText(prompt, references);
-    formData.set("prompt", requestPrompt);
-    formData.set("n", String(config.count || "1"));
-    const size = `${config.aspectRatio || "auto"} ${config.resolution || "1k"}`;
-    formData.set("size", size);
-    if (config.quality) {
-        formData.set("quality", config.quality);
-    }
-    formData.set("response_format", "b64_json");
-    formData.set("output_format", "png");
-
-    const imageField = files.length > 1 ? "image[]" : "image";
-    files.forEach((file) => formData.append(imageField, file));
+    const canvasModel = getCanvasImageModel(config.model);
+    const isGemini = canvasModel?.protocol === "gemini";
 
     const headers = await getCanvasAuthHeaders();
     options?.signal?.throwIfAborted();
     if (getCanvasHost().getUser()?.id !== userId) throw new Error(i18n.t("integration.sessionExpired"));
 
     try {
+        let endpoint = "/api/canvas/images/edits";
+        let requestPayload: unknown;
+
+        if (isGemini) {
+            endpoint = `/api/canvas/images/gemini/models/${encodeURIComponent(config.model)}:generateContent`;
+            const parts: GeminiPart[] = [{ text: buildImageReferencePromptText(prompt, references) }];
+            for (const ref of references) {
+                const dataUrl = await imageToDataUrl(ref);
+                parts.push(toGeminiImagePart(dataUrl));
+            }
+            const [aspectRatio, imageSize] = config.aspectRatio && config.resolution ? [config.aspectRatio, config.resolution] : [config.aspectRatio || "auto", config.resolution || "1k"];
+            requestPayload = {
+                contents: [{ parts }],
+                generationConfig: {
+                    responseModalities: ["IMAGE"],
+                    imageConfig: {
+                        ...(aspectRatio && aspectRatio !== "auto" ? { aspectRatio } : {}),
+                        ...(imageSize ? { imageSize: imageSize.toUpperCase() } : {}),
+                    },
+                },
+            };
+        } else {
+            const files = await Promise.all(
+                references.map(async (ref) => {
+                    try {
+                        return await loadReferenceImageFile(ref, options?.signal);
+                    } catch (err) {
+                        options?.signal?.throwIfAborted();
+                        throw new Error(apiText("referenceImageReadFailed"));
+                    }
+                }),
+            );
+            options?.signal?.throwIfAborted();
+
+            const formData = new FormData();
+            formData.set("model", config.model || config.imageModel || "gpt-image-2");
+            const requestPrompt = buildImageReferencePromptText(prompt, references);
+            formData.set("prompt", requestPrompt);
+            formData.set("n", String(config.count || "1"));
+            const size = `${config.aspectRatio || "auto"} ${config.resolution || "1k"}`;
+            formData.set("size", size);
+            if (config.quality) {
+                formData.set("quality", config.quality);
+            }
+            formData.set("response_format", "b64_json");
+            formData.set("output_format", "png");
+
+            const imageField = files.length > 1 ? "image[]" : "image";
+            files.forEach((file) => formData.append(imageField, file));
+            requestPayload = formData;
+        }
+
         const response = await axios.post<{
-            success: boolean;
-            data: Array<{
+            success?: boolean;
+            data?: Array<{
                 id: string;
                 url: string;
                 width: number;
@@ -827,12 +898,19 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
                 mime_type: string;
             }>;
             message?: string;
-        }>("/api/canvas/images/edits", formData, { headers, signal: options?.signal });
+            promptFeedback?: { blockReason?: string };
+            candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string }> } }>;
+            error?: { message?: string };
+        }>(endpoint, requestPayload, { headers, signal: options?.signal });
         options?.signal?.throwIfAborted();
         if (getCanvasHost().getUser()?.id !== userId || useUserStore.getState().user?.id !== userId) throw new Error(i18n.t("integration.sessionExpired"));
         const payload = response.data;
         if (!payload || typeof payload !== "object" || !payload.success || !Array.isArray(payload.data)) {
-            throw new Error(payload?.message || i18n.t("integration.invalidResponse"));
+            const candidateText = payload?.candidates?.[0]?.content?.parts?.find((p) => p.text)?.text;
+            const blockReason = payload?.promptFeedback?.blockReason || (payload?.candidates?.[0]?.finishReason && payload?.candidates?.[0]?.finishReason !== "STOP" ? payload?.candidates?.[0]?.finishReason : undefined);
+            const upstreamError = payload?.error?.message;
+            const failMessage = candidateText || (blockReason ? apiText("safetyBlocked", { reason: blockReason }) : upstreamError || payload?.message || i18n.t("integration.invalidResponse"));
+            throw new Error(failMessage);
         }
         if (!payload.data.length) throw new Error(i18n.t("integration.invalidResponse"));
         return payload.data.map((item) => ({

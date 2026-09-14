@@ -3,6 +3,7 @@ import { Brush, Camera, Copy, FileText, Grid2x2, Lock, LockOpen, Maximize2, Scis
 
 import type { CanvasNodeData } from "@/types/canvas";
 import i18n from "@/i18n";
+import { getCanvasImageModel } from "@/lib/canvas/image-models";
 
 export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "view";
 export type ImageQuickToolId = "info" | "delete" | "saveAsset" | "download" | ImageNodeActionToolId;
@@ -28,6 +29,7 @@ export type ImageToolDefinition = {
     title: string | ((node: CanvasNodeData) => string);
     icon: (node: CanvasNodeData) => ReactNode;
     active?: (node: CanvasNodeData) => boolean;
+    disabled?: (node: CanvasNodeData) => boolean;
     run: (node: CanvasNodeData, handlers: ImageToolHandlers) => void;
 };
 
@@ -78,9 +80,28 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
         id: "maskEdit",
         defaultVisible: true,
         label: () => i18n.t("canvas.imageTools.mask"),
-        title: () => i18n.t("canvas.imageTools.maskTitle"),
+        title: (node) => {
+            const model = node.metadata?.model || "gpt-image-2";
+            const modelDef = getCanvasImageModel(model);
+            if (modelDef && modelDef.supportsMaskEdit === false) {
+                return i18n.t("canvas.imageTools.maskEditUnsupported");
+            }
+            return i18n.t("canvas.imageTools.maskTitle");
+        },
+        disabled: (node) => {
+            const model = node.metadata?.model || "gpt-image-2";
+            const modelDef = getCanvasImageModel(model);
+            return modelDef?.supportsMaskEdit === false;
+        },
         icon: () => <Brush className="size-4" />,
-        run: (node, handlers) => handlers.onMaskEdit(node),
+        run: (node, handlers) => {
+            const model = node.metadata?.model || "gpt-image-2";
+            const modelDef = getCanvasImageModel(model);
+            if (modelDef && modelDef.supportsMaskEdit === false) {
+                return;
+            }
+            handlers.onMaskEdit(node);
+        },
     },
     {
         id: "crop",
@@ -132,7 +153,7 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
 ];
 
-const enabledImageTools = new Set<ImageNodeActionToolId>(["copyPrompt", "reversePrompt", "replace", "resize", "crop", "split", "view"]);
+const enabledImageTools = new Set<ImageNodeActionToolId>(["copyPrompt", "reversePrompt", "replace", "resize", "maskEdit", "crop", "split", "view"]);
 
 export const defaultImageQuickToolIds: ImageQuickToolId[] = [...defaultBaseToolIds, ...imageToolDefinitions.filter((tool) => tool.defaultVisible && enabledImageTools.has(tool.id)).map((tool) => tool.id)];
 
@@ -143,6 +164,7 @@ export function buildImageToolbarTools(node: CanvasNodeData, handlers: ImageTool
         title: resolveToolText(tool.title, node),
         icon: tool.icon(node),
         active: tool.active?.(node),
+        disabled: tool.disabled?.(node),
         onClick: () => tool.run(node, handlers),
     }));
 }

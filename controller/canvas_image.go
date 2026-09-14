@@ -85,6 +85,16 @@ func (w *canvasResponseWriter) WriteHeaderNow() {
 
 func (w *canvasResponseWriter) Flush() {}
 
+func passthroughCanvasResponse(origWriter gin.ResponseWriter, bufWriter *canvasResponseWriter) {
+	for k, v := range bufWriter.header {
+		for _, val := range v {
+			origWriter.Header().Add(k, val)
+		}
+	}
+	origWriter.WriteHeader(bufWriter.Status())
+	_, _ = origWriter.Write(bufWriter.body.Bytes())
+}
+
 func decodeBase64ImageData(raw string) ([]byte, error) {
 	if idx := strings.Index(raw, ";base64,"); idx != -1 {
 		raw = raw[idx+8:]
@@ -194,6 +204,41 @@ func processAndUploadImage(ctx context.Context, driver service.StorageDriver, us
 	}, nil
 }
 
+func persistAndUploadCanvasImages(c *gin.Context, driver service.StorageDriver, userId int, images []dto.ImageData, actionName string) ([]UploadImageResponse, error) {
+	results := make([]UploadImageResponse, len(images))
+	uploadedRecords := make([]*model.Image, len(images))
+	var mu sync.Mutex
+
+	var g errgroup.Group
+	for i, item := range images {
+		i, item := i, item
+		g.Go(func() error {
+			record, res, err := processAndUploadImage(c.Request.Context(), driver, userId, item)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			results[i] = *res
+			uploadedRecords[i] = record
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		common.SysError(fmt.Sprintf("画布%s图片转存失败：%v", actionName, err))
+		for _, rec := range uploadedRecords {
+			if rec != nil {
+				_ = driver.Delete(c.Request.Context(), rec.Key)
+				_ = model.DeleteImage(rec.Id)
+			}
+		}
+		return nil, fmt.Errorf("转存%s图片到对象存储失败", actionName)
+	}
+
+	return results, nil
+}
+
 func handleCanvasImageRelay(c *gin.Context, internalPath string, actionName string) {
 	userId := c.GetInt("id")
 	if userId <= 0 {
@@ -222,13 +267,7 @@ func handleCanvasImageRelay(c *gin.Context, internalPath string, actionName stri
 
 	if bufWriter.Status() != http.StatusOK {
 		c.Writer = origWriter
-		for k, v := range bufWriter.header {
-			for _, val := range v {
-				origWriter.Header().Add(k, val)
-			}
-		}
-		origWriter.WriteHeader(bufWriter.Status())
-		_, _ = origWriter.Write(bufWriter.body.Bytes())
+		passthroughCanvasResponse(origWriter, bufWriter)
 		return
 	}
 
@@ -239,36 +278,10 @@ func handleCanvasImageRelay(c *gin.Context, internalPath string, actionName stri
 		return
 	}
 
-	results := make([]UploadImageResponse, len(imageResp.Data))
-	uploadedRecords := make([]*model.Image, len(imageResp.Data))
-	var mu sync.Mutex
-
-	var g errgroup.Group
-	for i, item := range imageResp.Data {
-		i, item := i, item
-		g.Go(func() error {
-			record, res, err := processAndUploadImage(c.Request.Context(), driver, userId, item)
-			if err != nil {
-				return err
-			}
-			mu.Lock()
-			results[i] = *res
-			uploadedRecords[i] = record
-			mu.Unlock()
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		common.SysError(fmt.Sprintf("画布%s图片转存失败：%v", actionName, err))
-		for _, rec := range uploadedRecords {
-			if rec != nil {
-				_ = driver.Delete(c.Request.Context(), rec.Key)
-				_ = model.DeleteImage(rec.Id)
-			}
-		}
+	results, err := persistAndUploadCanvasImages(c, driver, userId, imageResp.Data, actionName)
+	if err != nil {
 		c.Writer = origWriter
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": fmt.Sprintf("转存%s图片到对象存储失败", actionName)})
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
 		return
 	}
 
@@ -282,4 +295,73 @@ func CanvasGenerateImages(c *gin.Context) {
 
 func CanvasEditImages(c *gin.Context) {
 	handleCanvasImageRelay(c, "/v1/images/edits", "编辑")
+}
+
+func CanvasGenerateGeminiImages(c *gin.Context) {
+	userId := c.GetInt("id")
+	if userId <= 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "未登录用户不能生成图片"})
+		return
+	}
+
+	driver := getImageStorageDriver()
+	if !driver.IsConfigured() {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "对象存储未配置或不可用"})
+		return
+	}
+
+	origWriter := c.Writer
+	bufWriter := newCanvasResponseWriter(origWriter)
+	c.Writer = bufWriter
+
+	path := c.Param("path")
+	internalPath := "/v1beta/models" + path
+	origURL := *c.Request.URL
+	c.Request.URL.Path = internalPath
+	defer func() {
+		c.Request.URL = &origURL
+	}()
+
+	Relay(c, types.RelayFormatGemini)
+
+	if bufWriter.Status() != http.StatusOK {
+		c.Writer = origWriter
+		passthroughCanvasResponse(origWriter, bufWriter)
+		return
+	}
+
+	var geminiResp dto.GeminiChatResponse
+	if err := common.Unmarshal(bufWriter.body.Bytes(), &geminiResp); err != nil {
+		// 上游可能返回了非标准响应或文本拒绝，透传上游响应
+		c.Writer = origWriter
+		passthroughCanvasResponse(origWriter, bufWriter)
+		return
+	}
+
+	var imageDataList []dto.ImageData
+	for _, candidate := range geminiResp.Candidates {
+		for _, part := range candidate.Content.Parts {
+			if part.InlineData != nil && part.InlineData.Data != "" {
+				imageDataList = append(imageDataList, dto.ImageData{
+					B64Json: part.InlineData.Data,
+				})
+			}
+		}
+	}
+
+	if len(imageDataList) == 0 {
+		c.Writer = origWriter
+		passthroughCanvasResponse(origWriter, bufWriter)
+		return
+	}
+
+	results, err := persistAndUploadCanvasImages(c, driver, userId, imageDataList, "生成")
+	if err != nil {
+		c.Writer = origWriter
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	c.Writer = origWriter
+	common.ApiSuccess(c, results)
 }

@@ -21,7 +21,8 @@ export type ImageOperation = {
 
 export type CanvasImageModel = {
     model: string;
-    protocol: "openai-image";
+    protocol: "openai-image" | "gemini";
+    supportsMaskEdit?: boolean;
     operations: { generation?: ImageOperation; edit?: ImageOperation };
 };
 
@@ -63,11 +64,15 @@ export const defaultImageEditSettings: ImageSettings = {
     count: "1",
 };
 
+const NANO_BANANA_ASPECT_RATIOS = ["1:1", "1:4", "4:1", "1:8", "8:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] as const;
+const GROK_IMAGINE_ASPECT_RATIOS = ["auto", "1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2", "9:19.5", "19.5:9", "9:20", "20:9", "1:2", "2:1"] as const;
+
 // 此处仅维护已接入的画布模型，不继承作图广场名单或上游渠道配置。
 export const canvasImageModels: readonly CanvasImageModel[] = [
     {
         model: "gpt-image-2",
         protocol: "openai-image",
+        supportsMaskEdit: true,
         operations: {
             generation: {
                 sizing: {
@@ -89,6 +94,134 @@ export const canvasImageModels: readonly CanvasImageModel[] = [
                 maxOutputs: 4,
                 maxReferences: 3,
                 defaults: defaultImageEditSettings,
+            },
+        },
+    },
+    {
+        model: "nano-banana-2",
+        protocol: "gemini",
+        supportsMaskEdit: false,
+        operations: {
+            generation: {
+                sizing: {
+                    kind: "resolution-ratio",
+                    resolutions: ["512", "1k", "2k", "4k"],
+                    aspectRatios: NANO_BANANA_ASPECT_RATIOS,
+                },
+                maxOutputs: 1,
+                defaults: {
+                    model: "nano-banana-2",
+                    resolution: "1k",
+                    aspectRatio: "1:1",
+                    quality: "",
+                    size: "",
+                    background: "",
+                    count: "1",
+                },
+            },
+            edit: {
+                sizing: {
+                    kind: "resolution-ratio",
+                    resolutions: ["512", "1k", "2k", "4k"],
+                    aspectRatios: ["auto", ...NANO_BANANA_ASPECT_RATIOS],
+                },
+                maxOutputs: 1,
+                maxReferences: 14,
+                defaults: {
+                    model: "nano-banana-2",
+                    resolution: "1k",
+                    aspectRatio: "auto",
+                    quality: "",
+                    size: "",
+                    background: "",
+                    count: "1",
+                },
+            },
+        },
+    },
+    {
+        model: "nano-banana-2-lite",
+        protocol: "gemini",
+        supportsMaskEdit: false,
+        operations: {
+            generation: {
+                sizing: {
+                    kind: "resolution-ratio",
+                    resolutions: ["1k"],
+                    aspectRatios: NANO_BANANA_ASPECT_RATIOS,
+                },
+                maxOutputs: 1,
+                defaults: {
+                    model: "nano-banana-2-lite",
+                    resolution: "1k",
+                    aspectRatio: "1:1",
+                    quality: "",
+                    size: "",
+                    background: "",
+                    count: "1",
+                },
+            },
+            edit: {
+                sizing: {
+                    kind: "resolution-ratio",
+                    resolutions: ["1k"],
+                    aspectRatios: ["auto", ...NANO_BANANA_ASPECT_RATIOS],
+                },
+                maxOutputs: 1,
+                maxReferences: 14,
+                defaults: {
+                    model: "nano-banana-2-lite",
+                    resolution: "1k",
+                    aspectRatio: "auto",
+                    quality: "",
+                    size: "",
+                    background: "",
+                    count: "1",
+                },
+            },
+        },
+    },
+    {
+        model: "grok-imagine-image-2.0",
+        protocol: "openai-image",
+        supportsMaskEdit: false,
+        operations: {
+            generation: {
+                sizing: {
+                    kind: "resolution-ratio",
+                    resolutions: ["1k", "2k"],
+                    aspectRatios: GROK_IMAGINE_ASPECT_RATIOS,
+                },
+                qualities: ["low", "medium"],
+                maxOutputs: 10,
+                defaults: {
+                    model: "grok-imagine-image-2.0",
+                    resolution: "1k",
+                    aspectRatio: "1:1",
+                    quality: "low",
+                    size: "",
+                    background: "",
+                    count: "1",
+                },
+            },
+            edit: {
+                sizing: {
+                    kind: "resolution-ratio",
+                    resolutions: ["1k", "2k"],
+                    aspectRatios: GROK_IMAGINE_ASPECT_RATIOS,
+                },
+                qualities: ["low", "medium"],
+                maxOutputs: 10,
+                maxReferences: 3,
+                defaults: {
+                    model: "grok-imagine-image-2.0",
+                    resolution: "1k",
+                    aspectRatio: "auto",
+                    quality: "low",
+                    size: "",
+                    background: "",
+                    count: "1",
+                },
             },
         },
     },

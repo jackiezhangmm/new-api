@@ -6,7 +6,7 @@ import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
 import { useImageGeneration } from "./hooks/use-image-generation";
-import { DEFAULT_AUXILIARY_TEXT_MODEL, switchImageModel } from "@/lib/canvas/image-models";
+import { DEFAULT_AUXILIARY_TEXT_MODEL, getCanvasImageModel, switchImageModel } from "@/lib/canvas/image-models";
 import { canvasCapabilities, assertCanvasNodesAllowed } from "@/lib/canvas/canvas-capabilities";
 import { requestEdit } from "@/services/api/image";
 import { isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
@@ -177,6 +177,30 @@ export default function CanvasPage() {
     }
 
     return <InfiniteCanvasPage key={id} />;
+}
+
+function isImageReferenceNode(node: CanvasNodeData | undefined): boolean {
+    return Boolean(node && node.type === CanvasNodeType.Image && node.metadata?.content);
+}
+
+function checkReferenceLimitExceeded(targetNodeId: string, sourceNodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[], defaultModel: string): number | null {
+    const sourceNode = nodes.find((n) => n.id === sourceNodeId);
+    if (!isImageReferenceNode(sourceNode)) return null;
+
+    const targetNode = nodes.find((n) => n.id === targetNodeId);
+    if (!targetNode || (targetNode.type !== CanvasNodeType.Image && targetNode.type !== CanvasNodeType.Config)) return null;
+
+    const targetModel = targetNode.metadata?.model || defaultModel;
+    const modelDef = getCanvasImageModel(targetModel);
+    const maxRefs = modelDef?.operations.edit?.maxReferences ?? 3;
+
+    const existingImageRefs = connections.filter((c) => {
+        if (c.toNodeId !== targetNodeId) return false;
+        const src = nodes.find((n) => n.id === c.fromNodeId);
+        return isImageReferenceNode(src);
+    }).length;
+
+    return existingImageRefs >= maxRefs ? maxRefs : null;
 }
 
 function InfiniteCanvasPage() {
@@ -801,6 +825,11 @@ function InfiniteCanvasPage() {
             const { fromNodeId, toNodeId } = connection;
             const exists = connectionsRef.current.some((conn) => conn.fromNodeId === fromNodeId && conn.toNodeId === toNodeId);
             if (!exists) {
+                const exceededMax = checkReferenceLimitExceeded(toNodeId, fromNodeId, nodesRef.current, connectionsRef.current, effectiveConfig.imageModel);
+                if (exceededMax !== null) {
+                    message.warning(t("canvas.projectPage.maxReferencesReached", { max: exceededMax }));
+                    return;
+                }
                 setConnections((prev) => [...prev, { id: `conn-${Date.now()}`, fromNodeId, toNodeId }]);
             }
             setContextMenu(null);
@@ -1108,8 +1137,13 @@ function InfiniteCanvasPage() {
         if (!referencePickerNodeId || referenceConnectedNodeIds.has(fromNodeId)) return;
         const source = nodesRef.current.find((node) => node.id === fromNodeId);
         if (!source || !isCanvasReferenceNode(source, nodesRef.current)) return;
+        const exceededMax = checkReferenceLimitExceeded(referencePickerNodeId, fromNodeId, nodesRef.current, connectionsRef.current, effectiveConfig.imageModel);
+        if (exceededMax !== null) {
+            message.warning(t("canvas.projectPage.maxReferencesReached", { max: exceededMax }));
+            return;
+        }
         setConnections((prev) => [...prev, { id: nanoid(), fromNodeId, toNodeId: referencePickerNodeId }]);
-    }, [referenceConnectedNodeIds, referencePickerNodeId]);
+    }, [effectiveConfig.imageModel, message, referenceConnectedNodeIds, referencePickerNodeId, t]);
 
     useEffect(() => {
         if (!referencePickerNodeId) return;

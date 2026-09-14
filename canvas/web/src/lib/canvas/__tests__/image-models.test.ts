@@ -16,7 +16,13 @@ import {
 } from "../image-models";
 
 test("受控模型交集与 image2 语义尺寸请求，不发送透明背景或旧渠道配置", () => {
-    assert.deepEqual(filterCanvasImageModels(["gpt-image-2", "gpt-image-2", "nano-banana-2", "unknown"]), ["gpt-image-2"]);
+    assert.deepEqual(filterCanvasImageModels(["gpt-image-2", "gpt-image-2", "nano-banana-2", "nano-banana-2-lite", "grok-imagine-image-2.0", "unknown"]), [
+        "gpt-image-2",
+        "nano-banana-2",
+        "nano-banana-2-lite",
+        "grok-imagine-image-2.0",
+    ]);
+    assert.deepEqual(filterCanvasImageModels(["unknown-model"]), []);
     assert.deepEqual(buildCanvasImageRequest({ ...defaultImageSettings, resolution: "2k", aspectRatio: "1:3", count: "4" }, " 海报 ", ["gpt-image-2"]), {
         model: "gpt-image-2",
         prompt: "海报",
@@ -119,5 +125,87 @@ test("M9 辅助文本受控候选名单固定为 gpt-5.6-terra，支持权限交
     assert.deepEqual(auxiliaryTextIssues(["gpt-5.6-terra"]), []);
     assert.ok(auxiliaryTextIssues(["gpt-image-2"]).length > 0);
     assert.ok(auxiliaryTextIssues([]).some((msg) => msg.includes("gpt-5.6-terra")));
+});
+
+test("新模型能力规格与参数纠偏校验：nano-banana-2, nano-banana-2-lite, grok-imagine-image-2.0", () => {
+    const allModels = ["gpt-image-2", "nano-banana-2", "nano-banana-2-lite", "grok-imagine-image-2.0"];
+
+    // 1. nano-banana-2
+    const bananaSettings = {
+        model: "nano-banana-2",
+        resolution: "2k",
+        aspectRatio: "16:9",
+        quality: "",
+        size: "",
+        background: "",
+        count: "1",
+    };
+    assert.equal(imageSettingsIssues(bananaSettings, allModels).length, 0);
+    // nano-banana-2 不支持 quality
+    assert.ok(imageSettingsIssues({ ...bananaSettings, quality: "low" }, allModels).length > 0);
+    // nano-banana-2 最多生成 1 张
+    assert.ok(imageSettingsIssues({ ...bananaSettings, count: "2" }, allModels).length > 0);
+    // nano-banana-2 支持 512, 1k, 2k, 4k
+    for (const res of ["512", "1k", "2k", "4k"]) {
+        assert.equal(imageSettingsIssues({ ...bananaSettings, resolution: res }, allModels).length, 0);
+    }
+    // nano-banana-2 宽高比 1:4 支持，但不支持 1:3
+    assert.equal(imageSettingsIssues({ ...bananaSettings, aspectRatio: "1:4" }, allModels).length, 0);
+    assert.ok(imageSettingsIssues({ ...bananaSettings, aspectRatio: "1:3" }, allModels).length > 0);
+    // nano-banana-2 编辑支持最多 14 张参考图
+    assert.equal(imageSettingsIssues({ ...bananaSettings, aspectRatio: "auto" }, allModels, "edit", 14).length, 0);
+    assert.ok(imageSettingsIssues({ ...bananaSettings, aspectRatio: "auto" }, allModels, "edit", 15).length > 0);
+
+    // 2. nano-banana-2-lite
+    const liteSettings = {
+        model: "nano-banana-2-lite",
+        resolution: "1k",
+        aspectRatio: "1:1",
+        quality: "",
+        size: "",
+        background: "",
+        count: "1",
+    };
+    assert.equal(imageSettingsIssues(liteSettings, allModels).length, 0);
+    // lite 仅支持 1k 分辨率，不支持 2k 或 4k
+    assert.ok(imageSettingsIssues({ ...liteSettings, resolution: "2k" }, allModels).length > 0);
+    assert.ok(imageSettingsIssues({ ...liteSettings, resolution: "4k" }, allModels).length > 0);
+
+    // 3. grok-imagine-image-2.0
+    const grokSettings = {
+        model: "grok-imagine-image-2.0",
+        resolution: "2k",
+        aspectRatio: "16:9",
+        quality: "medium",
+        size: "",
+        background: "",
+        count: "10",
+    };
+    assert.equal(imageSettingsIssues(grokSettings, allModels).length, 0);
+    // grok 最多支持 10 张出图，11 张超限
+    assert.ok(imageSettingsIssues({ ...grokSettings, count: "11" }, allModels).length > 0);
+    // grok 支持 1k, 2k，不支持 4k
+    assert.ok(imageSettingsIssues({ ...grokSettings, resolution: "4k" }, allModels).length > 0);
+    // grok 编辑最多 3 张参考图，4 张超限
+    assert.equal(imageSettingsIssues({ ...grokSettings, aspectRatio: "auto" }, allModels, "edit", 3).length, 0);
+    assert.ok(imageSettingsIssues({ ...grokSettings, aspectRatio: "auto" }, allModels, "edit", 4).length > 0);
+
+    // 4. switchImageModel 自动纠偏
+    // 切换到 nano-banana-2-lite 时，原有 2k 分辨率自动纠偏为 1k
+    const switchedToLite = switchImageModel({ ...defaultImageSettings, resolution: "2k", count: "4" }, "nano-banana-2-lite");
+    assert.equal(switchedToLite.settings.resolution, "1k");
+    assert.equal(switchedToLite.settings.quality, "");
+    assert.equal(switchedToLite.settings.count, "1");
+    assert.ok(switchedToLite.adjusted.includes("resolution"));
+    assert.ok(switchedToLite.adjusted.includes("quality"));
+    assert.ok(switchedToLite.adjusted.includes("count"));
+
+    // 切换到 nano-banana-2 时，原有 4 张出图自动纠偏为 1 张，quality 自动清空
+    const switchedToBanana = switchImageModel({ ...defaultImageSettings, resolution: "4k", quality: "medium", count: "4" }, "nano-banana-2");
+    assert.equal(switchedToBanana.settings.resolution, "4k");
+    assert.equal(switchedToBanana.settings.quality, "");
+    assert.equal(switchedToBanana.settings.count, "1");
+    assert.ok(switchedToBanana.adjusted.includes("quality"));
+    assert.ok(switchedToBanana.adjusted.includes("count"));
 });
 

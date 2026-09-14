@@ -186,9 +186,9 @@ test("新模型能力规格与参数纠偏校验：nano-banana-2, nano-banana-2-
     assert.ok(imageSettingsIssues({ ...grokSettings, count: "11" }, allModels).length > 0);
     // grok 支持 1k, 2k，不支持 4k
     assert.ok(imageSettingsIssues({ ...grokSettings, resolution: "4k" }, allModels).length > 0);
-    // grok 编辑最多 3 张参考图，4 张超限
-    assert.equal(imageSettingsIssues({ ...grokSettings, aspectRatio: "auto" }, allModels, "edit", 3).length, 0);
-    assert.ok(imageSettingsIssues({ ...grokSettings, aspectRatio: "auto" }, allModels, "edit", 4).length > 0);
+    // grok 编辑最多 3 张参考图，4 张超限；编辑不支持 quality
+    assert.equal(imageSettingsIssues({ ...grokSettings, aspectRatio: "auto", quality: "" }, allModels, "edit", 3).length, 0);
+    assert.ok(imageSettingsIssues({ ...grokSettings, aspectRatio: "auto", quality: "" }, allModels, "edit", 4).length > 0);
 
     // 4. switchImageModel 自动纠偏
     // 切换到 nano-banana-2-lite 时，原有 2k 分辨率自动纠偏为 1k
@@ -208,4 +208,44 @@ test("新模型能力规格与参数纠偏校验：nano-banana-2, nano-banana-2-
     assert.ok(switchedToBanana.adjusted.includes("quality"));
     assert.ok(switchedToBanana.adjusted.includes("count"));
 });
+
+test("模型载荷按能力矩阵适配：非 gpt-image-2 不附带 output_format，grok 编辑不附带 quality", () => {
+    const allModels = ["gpt-image-2", "nano-banana-2", "nano-banana-2-lite", "grok-imagine-image-2.0"];
+
+    // 1. gpt-image-2 保持既有兼容性，附带 output_format: png
+    const gptReq = buildCanvasImageRequest({ ...defaultImageSettings, model: "gpt-image-2" }, "a cat", allModels);
+    assert.equal((gptReq as Record<string, unknown>).output_format, "png");
+    const gptEditReq = buildCanvasImageEditRequest({ ...defaultImageEditSettings, model: "gpt-image-2" }, "a cat", allModels, 1);
+    assert.equal((gptEditReq as Record<string, unknown>).output_format, "png");
+
+    // 2. grok-imagine-image-2.0 文生图与图生图严禁附带 output_format
+    const grokGenSettings = {
+        model: "grok-imagine-image-2.0",
+        resolution: "1k",
+        aspectRatio: "1:1",
+        quality: "low",
+        size: "",
+        background: "",
+        count: "1",
+    };
+    const grokReq = buildCanvasImageRequest(grokGenSettings, "a dog", allModels);
+    assert.equal((grokReq as Record<string, unknown>).output_format, undefined);
+
+    const grokEditSettings = {
+        model: "grok-imagine-image-2.0",
+        resolution: "1k",
+        aspectRatio: "auto",
+        quality: "",
+        size: "",
+        background: "",
+        count: "1",
+    };
+    const grokEditReq = buildCanvasImageEditRequest(grokEditSettings, "a dog", allModels, 1);
+    assert.equal((grokEditReq as Record<string, unknown>).output_format, undefined);
+    assert.equal((grokEditReq as Record<string, unknown>).quality, undefined);
+
+    // grok edit 不支持 quality
+    assert.ok(imageSettingsIssues({ ...grokEditSettings, quality: "low" }, allModels, "edit", 1).length > 0);
+});
+
 

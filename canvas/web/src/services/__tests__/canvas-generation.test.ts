@@ -339,6 +339,20 @@ test("多协议服务端分流：nano-banana-2 路由至 Gemini 端点，grok �
         assert.equal(postedBody.model, "grok-imagine-image-2.0");
         assert.equal(postedBody.n, 5);
         assert.equal(postedBody.quality, "medium");
+        assert.equal(postedBody.output_format, undefined);
+
+        // 3.1 grok-imagine-image-2.0 图生图编辑调用 -> /api/canvas/images/edits
+        // FormData 中严禁包含 output_format 和 quality
+        await requestEdit(
+            { ...grokConfig, aspectRatio: "auto", quality: "" },
+            "grok edit",
+            [refImage1],
+        );
+        assert.equal(postedUrl, "/api/canvas/images/edits");
+        assert.ok(postedBody instanceof FormData);
+        assert.equal((postedBody as FormData).get("model"), "grok-imagine-image-2.0");
+        assert.equal((postedBody as FormData).get("output_format"), null);
+        assert.equal((postedBody as FormData).get("quality"), null);
 
         // 4. Gemini 上游安全审查拦截拦截（返回 promptFeedback.blockReason）
         axios.post = (async () => ({

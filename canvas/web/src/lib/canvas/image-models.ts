@@ -23,6 +23,7 @@ export type CanvasImageModel = {
     model: string;
     protocol: "openai-image" | "gemini";
     supportsMaskEdit?: boolean;
+    supportsOutputFormat?: boolean;
     operations: { generation?: ImageOperation; edit?: ImageOperation };
 };
 
@@ -73,6 +74,7 @@ export const canvasImageModels: readonly CanvasImageModel[] = [
         model: "gpt-image-2",
         protocol: "openai-image",
         supportsMaskEdit: true,
+        supportsOutputFormat: true,
         operations: {
             generation: {
                 sizing: {
@@ -210,14 +212,13 @@ export const canvasImageModels: readonly CanvasImageModel[] = [
                     resolutions: ["1k", "2k"],
                     aspectRatios: GROK_IMAGINE_ASPECT_RATIOS,
                 },
-                qualities: ["low", "medium"],
                 maxOutputs: 10,
                 maxReferences: 3,
                 defaults: {
                     model: "grok-imagine-image-2.0",
                     resolution: "1k",
                     aspectRatio: "auto",
-                    quality: "low",
+                    quality: "",
                     size: "",
                     background: "",
                     count: "1",
@@ -327,6 +328,8 @@ export function buildCanvasImageRequest(settings: ImageSettings, prompt: string,
     const issues = imageSettingsIssues(settings, available);
     if (issues.length) throw new Error(issues.join("\n"));
     if (!prompt.trim()) throw new Error(i18n.t("integration.promptRequired"));
+    const modelDef = getCanvasImageModel(settings.model);
+    const supportsOutputFormat = Boolean(modelDef?.supportsOutputFormat ?? (modelDef?.model === "gpt-image-2"));
     return {
         model: settings.model,
         prompt: prompt.trim(),
@@ -335,7 +338,7 @@ export function buildCanvasImageRequest(settings: ImageSettings, prompt: string,
         ...(settings.quality ? { quality: settings.quality } : {}),
         ...(settings.background ? { background: settings.background } : {}),
         response_format: "b64_json",
-        output_format: "png",
+        ...(supportsOutputFormat ? { output_format: "png" } : {}),
     };
 }
 
@@ -345,6 +348,8 @@ export function buildCanvasImageEditRequest(settings: ImageSettings, prompt: str
     if (!prompt.trim()) throw new Error(i18n.t("integration.promptRequired"));
     const aspectRatio = settings.aspectRatio || "auto";
     const resolution = settings.resolution || "1k";
+    const modelDef = getCanvasImageModel(settings.model);
+    const supportsOutputFormat = Boolean(modelDef?.supportsOutputFormat ?? (modelDef?.model === "gpt-image-2"));
     return {
         model: settings.model,
         prompt: prompt.trim(),
@@ -352,6 +357,6 @@ export function buildCanvasImageEditRequest(settings: ImageSettings, prompt: str
         size: `${aspectRatio} ${resolution}`,
         ...(settings.quality ? { quality: settings.quality } : {}),
         response_format: "b64_json",
-        output_format: "png",
+        ...(supportsOutputFormat ? { output_format: "png" } : {}),
     };
 }

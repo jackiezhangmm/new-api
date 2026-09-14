@@ -870,17 +870,21 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
             options?.signal?.throwIfAborted();
 
             const formData = new FormData();
-            formData.set("model", config.model || config.imageModel || "gpt-image-2");
+            const modelName = config.model || config.imageModel || "gpt-image-2";
+            formData.set("model", modelName);
             const requestPrompt = buildImageReferencePromptText(prompt, references);
             formData.set("prompt", requestPrompt);
             formData.set("n", String(config.count || "1"));
             const size = `${config.aspectRatio || "auto"} ${config.resolution || "1k"}`;
             formData.set("size", size);
-            if (config.quality) {
+            if (config.quality && canvasModel?.operations.edit?.qualities?.includes(config.quality)) {
                 formData.set("quality", config.quality);
             }
             formData.set("response_format", "b64_json");
-            formData.set("output_format", "png");
+            const supportsOutputFormat = Boolean(canvasModel?.supportsOutputFormat ?? (modelName === "gpt-image-2"));
+            if (supportsOutputFormat) {
+                formData.set("output_format", "png");
+            }
 
             const imageField = files.length > 1 ? "image[]" : "image";
             files.forEach((file) => formData.append(imageField, file));

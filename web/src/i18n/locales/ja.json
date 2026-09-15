@@ -574,6 +574,7 @@
     "Auto-fill when one field exists and another is missing": "一方のフィールドがあり他方が欠けている場合に自動補完",
     "Auto-refreshing every {{seconds}}s": "{{seconds}} 秒ごとに自動更新",
     "Auto-retry status codes": "自動リトライするステータスコード",
+    "AutoDL": "AutoDL",
     "Automatically disable channel on repeated failures": "繰り返しの失敗でチャネルを自動的に無効にする",
     "Automatically disable channels exceeding this response time": "この応答時間を超えるチャネルを自動的に無効にする",
     "Automatically disable channels when tests fail": "テストが失敗したときにチャネルを自動的に無効にする",

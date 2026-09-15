@@ -875,6 +875,7 @@ type TaskSubmitReq struct {
 	Images         []string               `json:"images,omitempty"`
 	Size           string                 `json:"size,omitempty"`
 	Duration       int                    `json:"duration,omitempty"`
+	Seed           *int64                 `json:"seed,omitempty"`
 	Seconds        string                 `json:"seconds,omitempty"`
 	InputReference string                 `json:"input_reference,omitempty"`
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`

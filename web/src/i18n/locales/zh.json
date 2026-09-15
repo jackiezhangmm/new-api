@@ -574,6 +574,7 @@
     "Auto-fill when one field exists and another is missing": "在一个字段有值、另一个缺失时自动补齐",
     "Auto-refreshing every {{seconds}}s": "每 {{seconds}} 秒自动刷新",
     "Auto-retry status codes": "自动重试状态码",
+    "AutoDL": "AutoDL",
     "Automatically disable channel on repeated failures": "重复失败时自动禁用渠道",
     "Automatically disable channels exceeding this response time": "自动禁用超出此响应时间的渠道",
     "Automatically disable channels when tests fail": "当测试失败时自动禁用渠道",

@@ -574,6 +574,7 @@
     "Auto-fill when one field exists and another is missing": "Remplissage automatique si un champ existe et l'autre est manquant",
     "Auto-refreshing every {{seconds}}s": "Actualisation automatique toutes les {{seconds}} s",
     "Auto-retry status codes": "Codes de statut de nouvelle tentative auto",
+    "AutoDL": "AutoDL",
     "Automatically disable channel on repeated failures": "Désactiver automatiquement le canal en cas d'échecs répétés",
     "Automatically disable channels exceeding this response time": "Désactiver automatiquement les canaux dépassant ce temps de réponse",
     "Automatically disable channels when tests fail": "Désactiver automatiquement les canaux lorsque les tests échouent",

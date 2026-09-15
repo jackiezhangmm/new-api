@@ -145,6 +145,17 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       baseUrl: 'Default: https://api.apimart.ai',
     },
   },
+  62: {
+    id: 62,
+    name: CHANNEL_TYPES[62],
+    icon: 'openai',
+    defaultBaseUrl: 'https://autodl.art',
+    hints: {
+      key: 'AutoDL API Key',
+      models: 'AutoDL workflow IDs',
+      baseUrl: 'Default: https://autodl.art',
+    },
+  },
   58: {
     id: 58,
     name: CHANNEL_TYPES[58],

@@ -574,6 +574,7 @@
     "Auto-fill when one field exists and another is missing": "Автозаполнение, когда одно поле есть, а другое отсутствует",
     "Auto-refreshing every {{seconds}}s": "Автообновление каждые {{seconds}} с",
     "Auto-retry status codes": "Коды авто-повтора",
+    "AutoDL": "AutoDL",
     "Automatically disable channel on repeated failures": "Автоматически отключать канал при повторных неудачах",
     "Automatically disable channels exceeding this response time": "Автоматически отключать каналы, превышающие это время ответа",
     "Automatically disable channels when tests fail": "Автоматически отключать каналы при сбое тестов",

@@ -7,6 +7,8 @@ import { dataUrlToFile, readFileAsDataUrl } from "@/lib/image-utils";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio } from "@/lib/media-size";
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
+import { getCanvasAuthHeaders } from "@/services/host-auth";
+import { getCanvasVideoModel } from "@/lib/canvas/video-models";
 import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
@@ -150,29 +152,41 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
 }
 
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
-    const images = await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
-    const videos = await Promise.all((options?.videos || []).map((video) => referenceMediaToFile(video, "ref.mp4", "invalidReferenceVideo", options)));
-    const audios = await Promise.all((options?.audios || []).map((audio) => referenceMediaToFile(audio, "ref.mp3", "invalidReferenceAudio", options)));
-    const mode = resolveVideoMode(config.videoMode, images.length);
-    const body = new FormData();
-    body.append("model", modelOptionName(model));
-    body.append("prompt", prompt);
-    body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
-    body.append("size", normalizeVideoSize(config.size, config.vquality) || "1280x720");
-    body.append("resolution_name", normalizeVideoResolution(config.vquality));
-    body.append("generate_audio", String(boolConfig(config.videoGenerateAudio, true)));
-    body.append("watermark", String(boolConfig(config.videoWatermark, false)));
-    body.append("mode", mode);
-    if (mode === "frames") {
-        if (images[0]) body.append("first_frame", images[0], "first.png");
-        if (images[1]) body.append("last_frame", images[1], "last.png");
-    } else {
-        images.forEach((file) => body.append("image[]", file, "ref.png"));
+    const imageList = references.map((r) => r.dataUrl || r.url).filter((v): v is string => Boolean(v));
+    const firstImage = imageList[0] || "";
+    const def = getCanvasVideoModel(model);
+    if (def?.requiresReferenceImage && !firstImage) {
+        throw new Error(i18n.t("integration.videoReferenceRequired"));
     }
-    videos.forEach((file) => body.append("video[]", file));
-    audios.forEach((file) => body.append("audio[]", file));
+    const duration = Number(normalizeVideoSeconds(config.videoSeconds)) || 5;
+    if (def && (duration < def.minDuration || duration > def.maxDuration)) {
+        throw new Error(i18n.t("integration.invalidSettings", { fields: i18n.t("settingsPanels.video.seconds") }));
+    }
+
+    const headers = await getCanvasAuthHeaders();
+    const payload: Record<string, unknown> = {
+        model: modelOptionName(model),
+        prompt,
+        image: firstImage,
+        duration,
+        metadata: {
+            resolution: normalizeVideoResolution(config.vquality),
+        },
+    };
+    if (imageList.length > 1) {
+        payload.images = imageList;
+    }
+
     try {
-        const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config), signal: options?.signal })).data);
+        const created = unwrapVideoResponse(
+            (await axios.post<ApiVideoResponse>("/v1/videos", payload, {
+                headers: {
+                    ...headers,
+                    "Content-Type": "application/json",
+                },
+                signal: options?.signal,
+            })).data,
+        );
         if (!created.id) throw new Error(apiText("noVideoTaskId"));
         return { id: created.id, provider: "openai", model };
     } catch (error) {
@@ -180,13 +194,14 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     }
 }
 
-async function pollOpenAIVideoTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
+async function pollOpenAIVideoTask(_config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
     try {
-        const video = unwrapVideoResponse((await axios.get<ApiVideoResponse>(aiApiUrl(config, `/videos/${task.id}`), { headers: aiHeaders(config), signal: options?.signal })).data);
+        const headers = await getCanvasAuthHeaders();
+        const video = unwrapVideoResponse((await axios.get<ApiVideoResponse>(`/v1/videos/${task.id}`, { headers, signal: options?.signal })).data);
         const url = videoResultUrl(video);
         if (url) return { status: "completed", result: await videoResultFromUrl(url, options) };
         if (video.status === "completed") {
-            const content = await axios.get<Blob>(aiApiUrl(config, `/videos/${task.id}/content`), { headers: aiHeaders(config), responseType: "blob", signal: options?.signal });
+            const content = await axios.get<Blob>(`/v1/videos/${task.id}/content`, { headers, responseType: "blob", signal: options?.signal });
             await assertVideoBlob(content.data);
             return { status: "completed", result: { blob: content.data } };
         }
@@ -254,10 +269,8 @@ async function pollGeminiVideoTask(config: AiConfig, task: VideoGenerationTask, 
     }
 }
 
-function assertVideoConfig(config: AiConfig, model: string) {
+function assertVideoConfig(_config: AiConfig, model: string) {
     if (!model) throw new Error(apiText("videoModelRequired"));
-    if (!config.baseUrl.trim()) throw new Error(apiText("baseUrlRequired"));
-    if (!config.apiKey.trim()) throw new Error(apiText("apiKeyRequired"));
 }
 
 function geminiVideoBaseUrl(config: Pick<AiConfig, "baseUrl">) {

@@ -1,4 +1,5 @@
 import { defaultImageSettings, DEFAULT_AUXILIARY_TEXT_MODEL, filterCanvasAuxiliaryTextModels, filterCanvasImageModels } from "@/lib/canvas/image-models";
+import { DEFAULT_CANVAS_VIDEO_MODEL, filterCanvasVideoModels } from "@/lib/canvas/video-models";
 import { canvasCapabilities, requireCanvasCapability } from "@/lib/canvas/canvas-capabilities";
 import { useMemo } from "react";
 import { create } from "zustand";
@@ -103,21 +104,21 @@ export const defaultConfig: AiConfig = {
     ],
     model: defaultImageSettings.model,
     imageModel: defaultImageSettings.model,
-    videoModel: "default::grok-imagine-video",
+    videoModel: DEFAULT_CANVAS_VIDEO_MODEL,
     textModel: DEFAULT_AUXILIARY_TEXT_MODEL,
     audioModel: "default::gpt-4o-mini-tts",
     audioVoice: "alloy",
     audioFormat: "mp3",
     audioSpeed: "1",
     audioInstructions: "",
-    videoSeconds: "6",
-    vquality: "720",
+    videoSeconds: "5",
+    vquality: "768",
     videoGenerateAudio: "true",
     videoWatermark: "false",
     videoMode: "frames",
     systemPrompt: "",
     reasoningEffort: "auto",
-    models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
+    models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts", DEFAULT_CANVAS_VIDEO_MODEL],
     quality: defaultImageSettings.quality,
     size: "",
     resolution: defaultImageSettings.resolution,
@@ -199,6 +200,7 @@ export function resolveModelForCapability(config: AiConfig, currentModel: string
 
 export function selectableModelsByCapability(config: AiConfig, capability?: ModelCapability) {
     if (capability === "text") return filterCanvasAuxiliaryTextModels(config.models);
+    if (capability === "video") return filterCanvasVideoModels(config.models);
     return !capability || capability === "image" ? filterCanvasImageModels(config.models) : [];
 }
 
@@ -207,8 +209,8 @@ export function resolveModelScript(config: AiConfig, value: string) {
     return findChannelModel(config, value)?.model.script?.trim() || "";
 }
 
-function isAiConfigReady(config: AiConfig, model: string) {
-    return canvasCapabilities.generation && filterCanvasImageModels(config.models).includes(model);
+export function isAiConfigReady(config: AiConfig, model: string) {
+    return canvasCapabilities.generation && (filterCanvasImageModels(config.models).includes(model) || (canvasCapabilities.video && filterCanvasVideoModels(config.models).includes(model)));
 }
 
 export const useConfigStore = create<ConfigStore>()(
@@ -219,6 +221,7 @@ export const useConfigStore = create<ConfigStore>()(
                 set({
                     availableModels: [
                         ...filterCanvasImageModels(models),
+                        ...(canvasCapabilities.video ? filterCanvasVideoModels(models) : []),
                         ...(canvasCapabilities.auxiliaryText ? filterCanvasAuxiliaryTextModels(models) : []),
                     ],
                 }),

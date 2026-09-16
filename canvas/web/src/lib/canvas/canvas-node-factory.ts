@@ -1,8 +1,9 @@
 import { defaultImageSettings } from "@/lib/canvas/image-models";
+import { defaultVideoSettings } from "@/lib/canvas/video-models";
 import { isCanvasNodeAllowed } from "@/lib/canvas/canvas-capabilities";
 import i18n from "@/i18n";
 import { getNodeSpec, NODE_DEFAULT_SIZE } from "@/constant/canvas";
-import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
+import { fitNodeSize, nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import type { AiConfig } from "@/stores/use-config-store";
 import type { UploadedImage } from "@/services/image-storage";
 import type { UploadedFile } from "@/services/file-storage";
@@ -24,12 +25,31 @@ export function createCanvasNode(type: CanvasNodeTypeId, position: Position, met
         },
         width: spec.width,
         height: spec.height,
-        metadata: { ...spec.metadata, ...(type === CanvasNodeType.Image || type === CanvasNodeType.Config ? { ...defaultImageSettings, count: Number(defaultImageSettings.count) } : {}), ...metadata },
+        metadata: {
+            ...spec.metadata,
+            ...(type === CanvasNodeType.Image || type === CanvasNodeType.Config ? { ...defaultImageSettings, count: Number(defaultImageSettings.count) } : {}),
+            ...(type === CanvasNodeType.Video ? defaultVideoSettings : {}),
+            ...metadata,
+        },
     };
 }
 
 export function imageMetadata(image: UploadedImage): CanvasNodeMetadata {
     return { content: image.url, storageKey: image.storageKey, status: "success", naturalWidth: image.width, naturalHeight: image.height, bytes: image.bytes, mimeType: image.mimeType };
+}
+
+export const VIDEO_NODE_MAX_WIDTH = 420;
+export const VIDEO_NODE_MAX_HEIGHT = 420;
+
+export function applyGeneratedVideo(item: CanvasNodeData, video: UploadedFile, extra: CanvasNodeData["metadata"] = {}): CanvasNodeData {
+    const videoSize = fitNodeSize(video.width || item.width, video.height || item.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
+    return {
+        ...item,
+        width: videoSize.width,
+        height: videoSize.height,
+        position: { x: item.position.x + item.width / 2 - videoSize.width / 2, y: item.position.y + item.height / 2 - videoSize.height / 2 },
+        metadata: { ...item.metadata, ...videoMetadata(video), ...extra },
+    };
 }
 
 export function videoMetadata(video: UploadedFile): CanvasNodeMetadata {

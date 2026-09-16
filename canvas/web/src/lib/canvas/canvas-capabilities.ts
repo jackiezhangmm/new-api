@@ -6,7 +6,7 @@ export const canvasCapabilities = {
     imageEditing: true,
     auxiliaryText: true,
     promptLibrary: true,
-    video: false,
+    video: true,
     audio: false,
     plugins: false,
     agent: false,
@@ -20,11 +20,11 @@ export function requireCanvasCapability(capability: keyof typeof canvasCapabilit
 }
 
 export function isCanvasNodeAllowed(type: string) {
-    return [CanvasNodeType.Image, CanvasNodeType.Text, CanvasNodeType.Config, CanvasNodeType.Group].some((allowed) => allowed === type);
+    return [CanvasNodeType.Image, CanvasNodeType.Text, CanvasNodeType.Config, CanvasNodeType.Group, CanvasNodeType.Video].some((allowed) => allowed === type);
 }
 
 export function assertCanvasNodesAllowed(nodes: CanvasNodeData[]) {
-    if (nodes.some((node) => !isCanvasNodeAllowed(node.type) || (node.metadata?.generationMode && node.metadata.generationMode !== "image" && node.metadata.generationMode !== "text"))) {
+    if (nodes.some((node) => !isCanvasNodeAllowed(node.type) || (node.metadata?.generationMode && node.metadata.generationMode !== "image" && node.metadata.generationMode !== "text" && node.metadata.generationMode !== "video"))) {
         throw new Error(i18n.t("integration.unsupportedProject"));
     }
 }

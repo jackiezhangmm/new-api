@@ -411,6 +411,7 @@ function InfiniteCanvasPage() {
                                   generateAudio: generationConfig.videoGenerateAudio,
                                   watermark: generationConfig.videoWatermark,
                                   videoMode: generationConfig.videoMode,
+                                  fallbackUrl: `/v1/videos/${taskId}/content`,
                               })
                             : item,
                     ),
@@ -3272,6 +3273,7 @@ function InfiniteCanvasPage() {
                     onToggleFreeResize={(node) => toggleNodeFreeResize(node.id)}
                     onDelete={(node) => deleteNodes(new Set([node.id]))}
                     onUngroup={(node) => ungroupSelection(new Set([node.id]))}
+                    onCaptureVideoFrame={(node, pos) => void captureVideoNodeFrame(node.id, pos)}
                 />
 
                 {hasMultipleSelectedNodes && !selectionBox ? (

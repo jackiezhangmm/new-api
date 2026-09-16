@@ -12,6 +12,7 @@ export default {
         resetSettings: "Use model defaults",
         promptRequired: "Enter a prompt",
         referencesUnavailable: "Image editing is not available yet. Remove image inputs before generating.",
+        videoReferenceRequired: "At least one reference image is required",
         invalidResponse: "The provider returned no valid images",
         fewerImages: "Received {{actual}} images out of {{requested}} requested",
         settings: { resolution: "Resolution", aspectRatio: "Aspect ratio", quality: "Quality", size: "Size", background: "Transparent background", count: "Image count", references: "Reference images" },

@@ -10,6 +10,9 @@ import { useEffectiveConfig } from "@/stores/use-config-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
+import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
+import { DEFAULT_CANVAS_VIDEO_MODEL, videoConfigPatch, videoSettingsIssues } from "@/lib/canvas/video-models";
+import type { AiConfig } from "@/stores/use-config-store";
 import { CanvasPromptChipInput } from "./canvas-prompt-chip-input";
 import { CanvasPromptLibrary } from "./canvas-prompt-library";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "@/types/canvas";
@@ -50,10 +53,15 @@ export function CanvasNodePromptPanel({
     const { t } = useTranslation();
     const globalConfig = useEffectiveConfig();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
-    const mode = modeOverride ?? (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Config ? "image" : "text");
+    const mode = modeOverride ?? (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Config ? "image" : node.type === CanvasNodeType.Video ? "video" : "text");
     const isText = mode === "text";
-    const config = isText ? globalConfig : buildGenerationConfig(globalConfig, node, "image");
-    const issues = isText ? auxiliaryTextIssues(globalConfig.models, DEFAULT_AUXILIARY_TEXT_MODEL) : imageSettingsIssues(config, config.models);
+    const isVideo = mode === "video";
+    const config = isText ? globalConfig : buildGenerationConfig(globalConfig, node, mode);
+    const issues = isText
+        ? auxiliaryTextIssues(globalConfig.models, DEFAULT_AUXILIARY_TEXT_MODEL)
+        : isVideo
+          ? videoSettingsIssues(config, config.models, connectedNodes.filter((n) => n.type === CanvasNodeType.Image).length)
+          : imageSettingsIssues(config, config.models);
     const [prompt, setPrompt] = useState(node.metadata?.composerContent ?? node.metadata?.prompt ?? "");
     const [expanded, setExpanded] = useState(false);
     useEffect(() => {
@@ -63,9 +71,11 @@ export function CanvasNodePromptPanel({
     }, [node.id]);
     if (!canvasCapabilities.generation) return null;
     if (mode === "image" && node.type === CanvasNodeType.Image && node.metadata?.content) return null;
+    if (mode === "video" && node.type === CanvasNodeType.Video && node.metadata?.content) return null;
     if (mode === "text" && !canvasCapabilities.auxiliaryText) return null;
-    if (mode !== "image" && mode !== "text") return null;
-    const placeholder = t(isText ? "canvas.promptPanel.editText" : "canvas.promptPanel.image");
+    if (mode === "video" && !canvasCapabilities.video) return null;
+    if (mode !== "image" && mode !== "text" && mode !== "video") return null;
+    const placeholder = t(isText ? "canvas.promptPanel.editText" : isVideo ? "canvas.promptPanel.video" : "canvas.promptPanel.image");
     const updatePrompt = (value: string) => {
         setPrompt(value);
         onPromptChange(node.id, value);
@@ -109,6 +119,11 @@ export function CanvasNodePromptPanel({
                     >
                         {DEFAULT_AUXILIARY_TEXT_MODEL}
                     </div>
+                ) : isVideo ? (
+                    <>
+                        <ModelPicker config={config} value={config.model || DEFAULT_CANVAS_VIDEO_MODEL} onChange={(model) => onConfigChange(node.id, { model })} capability="video" className="max-w-[190px]" />
+                        <CanvasVideoSettingsPopover config={config} onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
+                    </>
                 ) : (
                     <>
                         <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="image" className="max-w-[190px]" />

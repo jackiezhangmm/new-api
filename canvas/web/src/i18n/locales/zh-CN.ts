@@ -12,6 +12,7 @@ export default {
         resetSettings: "使用模型默认设置",
         promptRequired: "请输入提示词",
         referencesUnavailable: "参考图编辑尚未开放，请移除图片输入后再生成",
+        videoReferenceRequired: "必须提供至少一张参考图片",
         invalidResponse: "上游未返回有效图片",
         fewerImages: "已返回 {{actual}} 张图片，少于请求的 {{requested}} 张",
         settings: { resolution: "分辨率", aspectRatio: "宽高比", quality: "质量", size: "尺寸", background: "透明背景", count: "生成张数", references: "参考图" },

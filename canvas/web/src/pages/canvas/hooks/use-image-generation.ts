@@ -6,6 +6,11 @@ import { buildNodeGenerationContext, buildNodeResponseMessages, hydrateNodeGener
 import { buildGenerationConfig } from "@/lib/canvas/canvas-generation-helpers";
 import { runCanvasImageGeneration, runCanvasTextGeneration } from "@/lib/canvas/image-generation";
 import { auxiliaryTextIssues, DEFAULT_AUXILIARY_TEXT_MODEL, imageSettingsIssues } from "@/lib/canvas/image-models";
+import { videoSettingsIssues } from "@/lib/canvas/video-models";
+import { createVideoGenerationTask, isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
+import { applyGeneratedVideo } from "@/lib/canvas/canvas-node-factory";
+import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
+import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import type { AiConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasGenerationMode, type CanvasNodeData } from "@/types/canvas";
 import type { ReferenceImage } from "@/types/image";
@@ -45,6 +50,7 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                             ...node.metadata,
                             generationId: undefined,
                             mjTaskId: undefined,
+                            videoTaskId: undefined,
                             progress: undefined,
                             status: node.metadata.content ? "success" : "error",
                             errorDetails,
@@ -200,6 +206,133 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
         [config, connectionsRef, message, nodesRef, setConnections, setNodes, stop, t],
     );
 
+    const executeVideo = useCallback(
+        async (sourceId: string, prompt: string, retryTarget?: { targetId?: string }) => {
+            stop(sourceId);
+            if (retryTarget?.targetId) stop(retryTarget.targetId);
+            const source = nodesRef.current.find((node) => node.id === sourceId);
+            if (!source) return;
+            const controller = new AbortController();
+            const targetNodeId = retryTarget?.targetId || (source.type === CanvasNodeType.Video && !source.metadata?.content ? sourceId : nanoid());
+            const reuse = targetNodeId === sourceId;
+            const run: Run = { controller, targetId: targetNodeId };
+            runs.current.set(sourceId, run);
+            setRunningIds((current) => {
+                const next = new Set(current).add(sourceId);
+                if (targetNodeId) next.add(targetNodeId);
+                return next;
+            });
+            try {
+                const effectivePrompt = prompt || source.metadata?.composerContent || source.metadata?.prompt || "";
+                const context = buildNodeGenerationContext(sourceId, nodesRef.current, connectionsRef.current, effectivePrompt);
+                let references = context.referenceImages;
+                if (!references.length) {
+                    const selfRef = readReferenceImage(source);
+                    if (selfRef) references = [selfRef];
+                }
+                if (!references.length && source.metadata?.references?.length) {
+                    const savedRefs = source.metadata.references;
+                    const resolvedRefs: ReferenceImage[] = [];
+                    for (const ref of savedRefs) {
+                        const matched = nodesRef.current.find((n) => n.metadata?.storageKey === ref || n.metadata?.content === ref || n.id === ref);
+                        const refImage = matched ? readReferenceImage(matched) : null;
+                        if (refImage) resolvedRefs.push(refImage);
+                    }
+                    references = resolvedRefs;
+                }
+                const generationConfig = buildGenerationConfig(config, source, "video");
+                const issues = videoSettingsIssues(generationConfig, config.models, references.length);
+                if (issues.length) throw new Error(issues.join("\n"));
+
+                const spec = nodeSizeFromRatio(generationConfig.size, NODE_DEFAULT_SIZE[CanvasNodeType.Video].width, NODE_DEFAULT_SIZE[CanvasNodeType.Video].height) || NODE_DEFAULT_SIZE[CanvasNodeType.Video];
+                const parent = source.position || { x: 0, y: 0 };
+                const videoNode: CanvasNodeData = {
+                    id: targetNodeId,
+                    type: CanvasNodeType.Video,
+                    title: effectivePrompt.slice(0, 32) || t("assets.kinds.video"),
+                    position: reuse ? source.position : { x: parent.x + (source.width || spec.width) + 96, y: parent.y },
+                    width: reuse ? source.width : spec.width,
+                    height: reuse ? source.height : spec.height,
+                    metadata: {
+                        prompt: effectivePrompt,
+                        status: "loading" as const,
+                        model: generationConfig.model,
+                        size: generationConfig.size,
+                        seconds: generationConfig.videoSeconds,
+                        vquality: generationConfig.vquality,
+                        generateAudio: generationConfig.videoGenerateAudio,
+                        watermark: generationConfig.videoWatermark,
+                        videoMode: generationConfig.videoMode,
+                        references: references.map((r) => r.storageKey || r.url || r.dataUrl).filter(Boolean),
+                    },
+                };
+                setNodes((prev) =>
+                    reuse
+                        ? prev.map((node) => (node.id === sourceId ? { ...node, ...videoNode } : node))
+                        : [...prev.map((node) => (node.id === sourceId ? { ...node, metadata: { ...node.metadata, status: "success" as const } } : node)), videoNode],
+                );
+                if (!reuse) setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: sourceId, toNodeId: targetNodeId }]);
+
+                const task = await createVideoGenerationTask(generationConfig, effectivePrompt, references, { signal: controller.signal });
+                setNodes((prev) =>
+                    prev.map((item) =>
+                        item.id === targetNodeId
+                            ? { ...item, metadata: { ...item.metadata, videoTaskId: task.id, videoTaskProvider: task.provider, model: generationConfig.model } }
+                            : item,
+                    ),
+                );
+
+                const result = await waitForVideoGenerationTask(generationConfig, task, { signal: controller.signal });
+                const video = await storeGeneratedVideo(result);
+                const fallbackUrl = `/v1/videos/${task.id}/content`;
+                setNodes((prev) =>
+                    prev.map((item) =>
+                        item.id === targetNodeId
+                            ? applyGeneratedVideo(item, video, {
+                                  prompt: effectivePrompt,
+                                  model: generationConfig.model,
+                                  size: generationConfig.size,
+                                  seconds: generationConfig.videoSeconds,
+                                  vquality: generationConfig.vquality,
+                                  generateAudio: generationConfig.videoGenerateAudio,
+                                  watermark: generationConfig.videoWatermark,
+                                  videoMode: generationConfig.videoMode,
+                                  fallbackUrl,
+                                  status: "success" as const,
+                              })
+                            : item,
+                    ),
+                );
+            } catch (error) {
+                if (!controller.signal.aborted && !(error instanceof Error && error.name === "AbortError")) {
+                    const errorDetails = error instanceof Error ? error.message : t("canvas.projectPage.generationFailed");
+                    message.error(errorDetails);
+                    setNodes((prev) =>
+                        prev.map((item) =>
+                            item.id === targetNodeId
+                                ? {
+                                      ...item,
+                                      metadata: {
+                                          ...item.metadata,
+                                          status: item.metadata?.content ? "success" : "error",
+                                          errorDetails: item.metadata?.content ? undefined : errorDetails,
+                                          ...(isVideoTaskFailed(error) ? { videoTaskId: undefined } : {}),
+                                      },
+                                  }
+                                : item,
+                        ),
+                    );
+                }
+            } finally {
+                if (runs.current.get(sourceId) === run) {
+                    runs.current.delete(sourceId);
+                    setRunningIds((current) => new Set([...current].filter((id) => id !== sourceId && id !== run.targetId)));
+                }
+            }
+        },
+        [config, connectionsRef, message, nodesRef, setConnections, setNodes, stop, t],
+    );
+
     const generate = useCallback(
         async (nodeId: string, mode: CanvasGenerationMode, prompt: string) => {
             if (mode === "image") {
@@ -210,9 +343,13 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                 await executeText(nodeId, prompt);
                 return;
             }
+            if (mode === "video") {
+                await executeVideo(nodeId, prompt);
+                return;
+            }
             message.error(t("integration.unavailable"));
         },
-        [execute, executeText, message, t],
+        [execute, executeText, executeVideo, message, t],
     );
     const retry = useCallback(
         async (node: CanvasNodeData, imageId?: string) => {
@@ -226,9 +363,15 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                 await executeText(sourceId, node.metadata?.prompt || "", { targetId: node.id });
                 return;
             }
+            if (node.type === CanvasNodeType.Video) {
+                const upstream = connectionsRef.current.find((c) => c.toNodeId === node.id);
+                const sourceId = upstream ? upstream.fromNodeId : node.id;
+                await executeVideo(sourceId, node.metadata?.prompt || "", { targetId: node.id });
+                return;
+            }
             message.error(t("integration.unavailable"));
         },
-        [connectionsRef, execute, executeText, message, t],
+        [connectionsRef, execute, executeText, executeVideo, message, t],
     );
     return { generate, retry, stop, runningIds };
 }

@@ -62,6 +62,12 @@ func TestValidateRequestAndSetActionRequiresImageAndBoundsDuration(t *testing.T)
 	info := autoDLInfo()
 	require.Nil(t, (&TaskAdaptor{}).ValidateRequestAndSetAction(c, info))
 	require.Equal(t, constant.TaskActionGenerate, info.Action)
+
+	cImages := newTaskContext(`{"prompt":"make a video","images":["https://example.com/from-array.png"]}`)
+	defer common.CleanupBodyStorage(cImages)
+	infoImages := autoDLInfo()
+	require.Nil(t, (&TaskAdaptor{}).ValidateRequestAndSetAction(cImages, infoImages))
+	require.Equal(t, constant.TaskActionGenerate, infoImages.Action)
 }
 
 func TestBuildRequestBodyMapsAutoDLFields(t *testing.T) {
@@ -93,6 +99,24 @@ func TestBuildRequestBodyMapsAutoDLFields(t *testing.T) {
 	require.Equal(t, "image-1", *payload.RefImage1)
 	require.Equal(t, "image-8", *payload.RefImage8)
 	require.Equal(t, "audio-0", *payload.RefAudio0)
+}
+
+func TestBuildRequestBodyFallsBackToImagesArray(t *testing.T) {
+	c := newTaskContext(`{"prompt":"make a video","images":["https://example.com/fallback.png"]}`)
+	defer common.CleanupBodyStorage(c)
+	req := relaycommon.TaskSubmitReq{
+		Prompt: "make a video",
+		Images: []string{"https://example.com/fallback.png"},
+	}
+	c.Set("task_request", req)
+
+	body, err := (&TaskAdaptor{}).BuildRequestBody(c, autoDLInfo())
+	require.NoError(t, err)
+	data, err := io.ReadAll(body)
+	require.NoError(t, err)
+	var payload requestPayload
+	require.NoError(t, common.Unmarshal(data, &payload))
+	require.Equal(t, "https://example.com/fallback.png", payload.RefImage0)
 }
 
 func TestAutoDLURLHeaderAndBilling(t *testing.T) {

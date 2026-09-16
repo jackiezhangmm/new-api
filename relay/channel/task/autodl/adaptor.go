@@ -106,7 +106,11 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	if err != nil {
 		return service.TaskErrorWrapper(err, "get_task_request_failed", http.StatusBadRequest)
 	}
-	if strings.TrimSpace(req.Image) == "" {
+	image := strings.TrimSpace(req.Image)
+	if image == "" && len(req.Images) > 0 {
+		image = strings.TrimSpace(req.Images[0])
+	}
+	if image == "" {
 		return service.TaskErrorWrapperLocal(fmt.Errorf("image is required"), "missing_image", http.StatusBadRequest)
 	}
 	if _, err := requestDuration(req); err != nil {
@@ -155,8 +159,12 @@ func (a *TaskAdaptor) requestPayload(req relaycommon.TaskSubmitReq) (*requestPay
 	if err := req.UnmarshalMetadata(&metadata); err != nil {
 		return nil, err
 	}
+	image := strings.TrimSpace(req.Image)
+	if image == "" && len(req.Images) > 0 {
+		image = strings.TrimSpace(req.Images[0])
+	}
 	return &requestPayload{
-		Prompt: req.Prompt, Duration: duration, RefImage0: strings.TrimSpace(req.Image), Seed: req.Seed,
+		Prompt: req.Prompt, Duration: duration, RefImage0: image, Seed: req.Seed,
 		Resolution: metadata.Resolution,
 		RefImage1:  metadata.RefImage1, RefImage2: metadata.RefImage2, RefImage3: metadata.RefImage3,
 		RefImage4: metadata.RefImage4, RefImage5: metadata.RefImage5, RefImage6: metadata.RefImage6,

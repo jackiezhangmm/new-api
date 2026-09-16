@@ -16,14 +16,13 @@ import { CanvasNodeType } from "@/types/canvas";
 
 const config = { ...defaultConfig, apiKey: "legacy-key", baseUrl: "https://invalid.example" };
 
-test("M10 开放本站精选词库（promptLibrary），仍拒绝外部源（externalPrompts）、视频、音频、插件与外部服务调用", async () => {
+test("开放精选词库与视频能力，仍拒绝外部源、音频、插件与外部服务调用", async () => {
     assert.equal(canvasCapabilities.promptLibrary, true);
     assert.equal(canvasCapabilities.externalPrompts, false);
+    assert.equal(canvasCapabilities.video, true);
     const requests = [
         () => fetchImageModels(config),
         () => requestAudioGeneration(config, "prompt"),
-        () => createVideoGenerationTask(config, "prompt"),
-        () => pollVideoGenerationTask(config, { id: "old-task", provider: "openai", model: config.model }),
         () => runModelPlugin({ capability: "image", script: "throw new Error('script executed')", config, prompt: "prompt" }),
         () => installPluginFromUrl("https://invalid.example/plugin.js"),
         () => discoverAgentConfig("https://invalid.example"),
@@ -38,15 +37,17 @@ test("M10 开放本站精选词库（promptLibrary），仍拒绝外部源（ext
     assert.throws(() => useConfigStore.getState().importChannelCredentials({ baseUrl: config.baseUrl, apiKey: config.apiKey }), /此功能尚未开放/);
 });
 
-test("保留图片和文本节点，放行文本生成模式，拒绝视频、音频、插件和其他生成模式", () => {
+test("保留图片、文本和视频节点，放行文本与视频生成模式，拒绝音频、插件和其他生成模式", () => {
     const image = createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 });
     const text = createCanvasNode(CanvasNodeType.Text, { x: 0, y: 0 });
-    assert.doesNotThrow(() => assertCanvasNodesAllowed([image, text]));
+    const video = createCanvasNode(CanvasNodeType.Video, { x: 0, y: 0 });
+    assert.doesNotThrow(() => assertCanvasNodesAllowed([image, text, video]));
     assert.doesNotThrow(() => assertCanvasNodesAllowed([{ ...image, metadata: { generationMode: "image" } }]));
     assert.doesNotThrow(() => assertCanvasNodesAllowed([{ ...image, metadata: { generationMode: "text" } }]));
-    for (const type of [CanvasNodeType.Video, CanvasNodeType.Audio, "legacy-plugin"]) {
+    assert.doesNotThrow(() => assertCanvasNodesAllowed([{ ...image, metadata: { generationMode: "video" } }]));
+    for (const type of [CanvasNodeType.Audio, "legacy-plugin"]) {
         assert.throws(() => createCanvasNode(type, { x: 0, y: 0 }));
         assert.throws(() => assertCanvasNodesAllowed([{ ...image, type }]));
     }
-    assert.throws(() => assertCanvasNodesAllowed([{ ...image, metadata: { generationMode: "video" } }]));
+    assert.throws(() => assertCanvasNodesAllowed([{ ...image, metadata: { generationMode: "audio" } }]));
 });

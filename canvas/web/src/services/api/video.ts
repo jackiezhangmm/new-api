@@ -151,6 +151,19 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
     throw new Error(apiText("noPlayableVideo"));
 }
 
+export function formatAutoDLResolution(vquality?: string, size?: string) {
+    const rawQuality = String(vquality || "").trim().toLowerCase();
+    const quality = rawQuality.includes("480") ? "480p" : "768p";
+    const rawSize = String(size || "").trim().toLowerCase();
+    if (rawQuality.includes("竖") || rawSize === "9:16" || rawSize.includes("竖") || rawSize.includes("portrait")) {
+        return `${quality}竖`;
+    }
+    if (rawQuality.includes("1:1") || rawQuality.includes("方") || rawSize === "1:1" || rawSize.includes("方") || rawSize.includes("square")) {
+        return `${quality}1:1`;
+    }
+    return `${quality}横`;
+}
+
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
     const imageList = references.map((r) => r.dataUrl || r.url).filter((v): v is string => Boolean(v));
     const firstImage = imageList[0] || "";
@@ -170,7 +183,7 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
         image: firstImage,
         duration,
         metadata: {
-            resolution: normalizeVideoResolution(config.vquality),
+            resolution: formatAutoDLResolution(config.vquality, config.size),
         },
     };
     if (imageList.length > 1) {

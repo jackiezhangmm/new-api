@@ -36,6 +36,7 @@ test("createVideoGenerationTask 序列化 JSON 载荷并通过会话头调用 /v
             model: "minimax_h3_zm_u24",
             videoSeconds: "5",
             vquality: "768",
+            size: "16:9",
         };
         const task = await createVideoGenerationTask(config, "draw a river", [
             { id: "img-1", name: "ref.png", type: "image/png", dataUrl: "https://example.com/ref.png" },
@@ -50,7 +51,18 @@ test("createVideoGenerationTask 序列化 JSON 载荷并通过会话头调用 /v
         assert.equal(calledBody?.prompt, "draw a river");
         assert.equal(calledBody?.image, "https://example.com/ref.png");
         assert.equal(calledBody?.duration, 5);
-        assert.equal(calledBody?.metadata?.resolution, "768p");
+        assert.equal(calledBody?.metadata?.resolution, "768p横");
+
+        // 竖屏与 1:1 尺寸正确映射为 768p竖 / 480p1:1
+        await createVideoGenerationTask({ ...config, size: "9:16" }, "vertical", [
+            { id: "img-1", name: "ref.png", type: "image/png", dataUrl: "https://example.com/ref.png" },
+        ]);
+        assert.equal(calledBody?.metadata?.resolution, "768p竖");
+
+        await createVideoGenerationTask({ ...config, size: "1:1", vquality: "480" }, "square", [
+            { id: "img-1", name: "ref.png", type: "image/png", dataUrl: "https://example.com/ref.png" },
+        ]);
+        assert.equal(calledBody?.metadata?.resolution, "480p1:1");
 
         // Missing reference image rejects
         await assert.rejects(

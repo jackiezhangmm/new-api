@@ -260,9 +260,6 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                         size: generationConfig.size,
                         seconds: generationConfig.videoSeconds,
                         vquality: generationConfig.vquality,
-                        generateAudio: generationConfig.videoGenerateAudio,
-                        watermark: generationConfig.videoWatermark,
-                        videoMode: generationConfig.videoMode,
                         references: references.map((r) => r.storageKey || r.url || r.dataUrl).filter(Boolean),
                     },
                 };
@@ -294,9 +291,6 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                                   size: generationConfig.size,
                                   seconds: generationConfig.videoSeconds,
                                   vquality: generationConfig.vquality,
-                                  generateAudio: generationConfig.videoGenerateAudio,
-                                  watermark: generationConfig.videoWatermark,
-                                  videoMode: generationConfig.videoMode,
                                   fallbackUrl,
                                   status: "success" as const,
                               })

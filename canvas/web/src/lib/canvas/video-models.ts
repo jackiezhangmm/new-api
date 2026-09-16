@@ -33,16 +33,13 @@ export const defaultVideoSettings = {
     model: DEFAULT_CANVAS_VIDEO_MODEL,
     seconds: "5",
     vquality: "768",
-    videoMode: "frames",
-    generateAudio: "true",
-    watermark: "false",
+    size: "16:9",
 };
 
 export function videoConfigPatch(key: keyof AiConfig, value: string) {
     if (key === "videoSeconds") return { seconds: value };
-    if (key === "videoGenerateAudio") return { generateAudio: value };
-    if (key === "videoWatermark") return { watermark: value };
-    if (key === "videoMode") return { videoMode: value };
+    if (key === "vquality") return { vquality: value };
+    if (key === "size") return { size: value };
     return { [key]: value };
 }
 

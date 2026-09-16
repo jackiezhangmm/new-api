@@ -408,9 +408,6 @@ function InfiniteCanvasPage() {
                                   size: generationConfig.size,
                                   seconds: generationConfig.videoSeconds,
                                   vquality: generationConfig.vquality,
-                                  generateAudio: generationConfig.videoGenerateAudio,
-                                  watermark: generationConfig.videoWatermark,
-                                  videoMode: generationConfig.videoMode,
                                   fallbackUrl: `/v1/videos/${taskId}/content`,
                               })
                             : item,

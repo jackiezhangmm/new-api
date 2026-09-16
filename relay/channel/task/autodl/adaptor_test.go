@@ -107,13 +107,17 @@ func TestAutoDLURLHeaderAndBilling(t *testing.T) {
 	assert.Equal(t, "secret", req.Header.Get("Authorization"))
 	assert.Equal(t, "application/json", req.Header.Get("Content-Type"))
 
-	c := newTaskContext(`{"prompt":"make a video","image":"image","duration":10,"metadata":{"resolution":"480p竖"}}`)
-	defer common.CleanupBodyStorage(c)
-	require.Nil(t, adaptor.ValidateRequestAndSetAction(c, info))
-	info.ChannelOtherSettings.ResolutionRatios = map[string]float64{"480p竖": 0.6}
-	assert.Equal(t, map[string]float64{"seconds": 10, "resolution": 0.6}, adaptor.EstimateBilling(c, info))
+	c480p := newTaskContext(`{"prompt":"make a video","image":"image","duration":10,"metadata":{"resolution":"480p竖"}}`)
+	defer common.CleanupBodyStorage(c480p)
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(c480p, info))
+	assert.Equal(t, map[string]float64{"seconds": 10, "resolution": 1.0}, adaptor.EstimateBilling(c480p, info))
 
-	fallback := newTaskContext(`{"prompt":"make a video","image":"image","duration":10,"metadata":{"resolution":"720p竖"}}`)
+	c768p := newTaskContext(`{"prompt":"make a video","image":"image","duration":10,"metadata":{"resolution":"768p竖"}}`)
+	defer common.CleanupBodyStorage(c768p)
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(c768p, info))
+	assert.Equal(t, map[string]float64{"seconds": 10, "resolution": 1.333}, adaptor.EstimateBilling(c768p, info))
+
+	fallback := newTaskContext(`{"prompt":"make a video","image":"image","duration":10,"metadata":{"resolution":"other"}}`)
 	defer common.CleanupBodyStorage(fallback)
 	require.Nil(t, adaptor.ValidateRequestAndSetAction(fallback, info))
 	assert.Equal(t, map[string]float64{"seconds": 10, "resolution": 1.0}, adaptor.EstimateBilling(fallback, info))
@@ -131,7 +135,7 @@ func TestParseTaskResultMapsAutoDLStatuses(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.status, func(t *testing.T) {
-			body := `{"data":{"status":"` + tt.status + `","results":["https://example.com/video.mp4"],"message":"failed"}}`
+			body := `{"data":{"status":"` + tt.status + `","results":[{"type":"video","url":"https://example.com/video.mp4"}],"message":"failed"}}`
 			result, err := (&TaskAdaptor{}).ParseTaskResult([]byte(body))
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, result.Status)
@@ -140,6 +144,12 @@ func TestParseTaskResultMapsAutoDLStatuses(t *testing.T) {
 			}
 		})
 	}
+
+	// Also support plain string array
+	strBody := `{"data":{"status":"SUCCESS","results":["https://example.com/video.mp4"]}}`
+	res, err := (&TaskAdaptor{}).ParseTaskResult([]byte(strBody))
+	require.NoError(t, err)
+	assert.Equal(t, "https://example.com/video.mp4", res.Url)
 }
 
 func TestDoResponseAndFetchTask(t *testing.T) {

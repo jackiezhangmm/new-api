@@ -2,6 +2,7 @@ package autodl
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -76,10 +77,10 @@ type submitResponse struct {
 type resultResponse struct {
 	Code string `json:"code"`
 	Data struct {
-		TaskID  string   `json:"task_id"`
-		Status  string   `json:"status"`
-		Results []string `json:"results"`
-		Message string   `json:"message"`
+		TaskID  string          `json:"task_id"`
+		Status  string          `json:"status"`
+		Results json.RawMessage `json:"results"`
+		Message string          `json:"message"`
 	} `json:"data"`
 	Message string `json:"msg"`
 }
@@ -245,7 +246,7 @@ func (a *TaskAdaptor) GetModelList() []string { return modelList }
 
 func (a *TaskAdaptor) GetChannelName() string { return channelName }
 
-func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
+func (a *TaskAdaptor) EstimateBilling(c *gin.Context, _ *relaycommon.RelayInfo) map[string]float64 {
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil
@@ -254,13 +255,15 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	if err != nil {
 		return nil
 	}
-	ratio := 1.0
-	if resolution := metadataResolution(req); resolution != "" {
-		if configured, ok := info.ChannelOtherSettings.ResolutionRatios[resolution]; ok {
-			ratio = configured
-		}
+	return map[string]float64{"seconds": float64(duration), "resolution": resolutionRatio(metadataResolution(req))}
+}
+
+func resolutionRatio(resolution string) float64 {
+	res := strings.ToLower(strings.TrimSpace(resolution))
+	if strings.Contains(res, "768p") {
+		return 1.333
 	}
-	return map[string]float64{"seconds": float64(duration), "resolution": ratio}
+	return 1.0
 }
 
 func metadataResolution(req relaycommon.TaskSubmitReq) string {
@@ -269,6 +272,31 @@ func metadataResolution(req relaycommon.TaskSubmitReq) string {
 		return ""
 	}
 	return *metadata.Resolution
+}
+
+func parseResultsURL(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var items []struct {
+		URL string `json:"url"`
+	}
+	if err := common.Unmarshal(raw, &items); err == nil {
+		for _, item := range items {
+			if item.URL != "" {
+				return item.URL
+			}
+		}
+	}
+	var urls []string
+	if err := common.Unmarshal(raw, &urls); err == nil {
+		for _, u := range urls {
+			if u != "" {
+				return u
+			}
+		}
+	}
+	return ""
 }
 
 func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {
@@ -285,9 +313,7 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 		result.Status = model.TaskStatusInProgress
 	case "SUCCESS":
 		result.Status = model.TaskStatusSuccess
-		if len(response.Data.Results) > 0 {
-			result.Url = response.Data.Results[0]
-		}
+		result.Url = parseResultsURL(response.Data.Results)
 	case "FAILED":
 		result.Status = model.TaskStatusFailure
 		result.Reason = response.Data.Message
@@ -311,8 +337,8 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	video.SetProgressStr(task.Progress)
 	video.CreatedAt = task.CreatedAt
 	video.CompletedAt = task.UpdatedAt
-	if len(response.Data.Results) > 0 && response.Data.Results[0] != "" {
-		video.SetMetadata("url", response.Data.Results[0])
+	if videoURL := parseResultsURL(response.Data.Results); videoURL != "" {
+		video.SetMetadata("url", videoURL)
 	}
 	if task.Status == model.TaskStatusFailure {
 		message := response.Data.Message

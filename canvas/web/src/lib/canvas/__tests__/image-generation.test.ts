@@ -183,7 +183,7 @@ test("单图重试保留其他图片、批次数量和主图，失败后允许�
     );
 });
 
-test("M8 编辑模式派生新节点，写入参考图 UUID 清单并调用 edit", async () => {
+test("已有图像节点原位重新生成，直接覆盖当前节点，不派生新节点与连线", async () => {
     let nodes: CanvasNodeData[] = [
         {
             id: "source-node",
@@ -249,24 +249,113 @@ test("M8 编辑模式派生新节点，写入参考图 UUID 清单并调用 edit
     assert.equal(generateCalled, false);
     assert.equal(result.received, 2);
 
-    // 验证派生新节点并在右侧创建
-    assert.equal(nodes.length, 2);
-    const targetNode = nodes.find((n) => n.id === result.targetId)!;
-    assert.ok(targetNode);
-    assert.ok(targetNode.position.x >= 100 + 300 + 96);
-    assert.ok(targetNode.position.y >= 100);
+    // 验证原位重新生成：目标 ID 为源节点本身，不派生新节点，不创建连线
+    assert.equal(result.targetId, "source-node");
+    assert.equal(nodes.length, 1);
+    assert.equal(connections.length, 0);
 
-    // 验证新节点持有编辑类型与参考图 UUID 清单
+    // 验证节点在原位被新内容覆写
+    const targetNode = nodes[0];
     assert.equal(targetNode.metadata?.generationType, "edit");
     assert.deepEqual(targetNode.metadata?.references, ["ref-uuid-1"]);
     assert.equal(targetNode.metadata?.status, "success");
+    assert.equal(targetNode.metadata?.content, "https://example.com/out-1.png");
+    assert.equal(targetNode.metadata?.storageKey, "out-uuid-1");
     assert.equal(targetNode.metadata?.images?.length, 2);
     assert.equal(targetNode.metadata?.images?.[0].storageKey, "out-uuid-1");
+});
 
-    // 验证自动建立源到目标的连线
+test("Config 节点生成向右派生新节点并建立连线", async () => {
+    let nodes: CanvasNodeData[] = [
+        {
+            id: "config-node",
+            type: CanvasNodeType.Config,
+            title: "生成配置",
+            position: { x: 100, y: 100 },
+            width: 300,
+            height: 200,
+            metadata: {
+                composerContent: "a blue bird",
+            },
+        },
+    ];
+    let connections: Array<{ sourceId: string; targetId: string }> = [];
+
+    const run = {
+        sourceId: "config-node",
+        prompt: "a blue bird",
+        config: { ...defaultConfig, models: ["gpt-image-2"], count: "1" },
+        signal: new AbortController().signal,
+        getNodes: () => nodes,
+        setNodes: (update: (value: CanvasNodeData[]) => CanvasNodeData[]) => {
+            nodes = update(nodes);
+        },
+        addConnection: (sourceId: string, targetId: string) => {
+            connections.push({ sourceId, targetId });
+        },
+    };
+
+    const result = await runCanvasImageGeneration(run, {
+        generate: async () => [
+            { id: "out-1", storageKey: "out-uuid-1", url: "https://example.com/bird.png", dataUrl: "https://example.com/bird.png", width: 300, height: 200, bytes: 5000, mimeType: "image/png" },
+        ],
+        store: async () => ({ url: "", width: 0, height: 0, bytes: 0, mimeType: "" }),
+    });
+
+    assert.notEqual(result.targetId, "config-node");
+    assert.equal(nodes.length, 2);
     assert.equal(connections.length, 1);
-    assert.equal(connections[0].sourceId, "source-node");
-    assert.equal(connections[0].targetId, targetNode.id);
+    assert.equal(connections[0].sourceId, "config-node");
+    assert.equal(connections[0].targetId, result.targetId);
+});
+
+test("已有文本节点生成原位流式改写当前节点，不派生新节点与连线", async () => {
+    let nodes: CanvasNodeData[] = [
+        {
+            id: "text-orig",
+            type: CanvasNodeType.Text,
+            title: "原始文本",
+            position: { x: 100, y: 100 },
+            width: 340,
+            height: 240,
+            metadata: {
+                content: "一只可爱的赛博猫咪",
+                prompt: "一只可爱的赛博猫咪",
+                status: "success",
+            },
+        },
+    ];
+    let connections: Array<{ sourceId: string; targetId: string }> = [];
+
+    const running = runCanvasTextGeneration(
+        {
+            sourceId: "text-orig",
+            prompt: "扩充细节",
+            config: { ...defaultConfig, models: ["gpt-5.6-terra"], model: "gpt-5.6-terra" },
+            signal: new AbortController().signal,
+            messages: [{ role: "user", content: "扩充细节" }],
+            getNodes: () => nodes,
+            setNodes: (update) => {
+                nodes = update(nodes);
+            },
+            addConnection: (sourceId, targetId) => {
+                connections.push({ sourceId, targetId });
+            },
+        },
+        {
+            question: async (_cfg, _msgs, onDelta) => {
+                onDelta("赛博猫咪，身披机械外骨骼");
+                return "赛博猫咪，身披机械外骨骼";
+            },
+        },
+    );
+
+    const result = await running;
+    assert.equal(result.targetId, "text-orig");
+    assert.equal(nodes.length, 1);
+    assert.equal(connections.length, 0);
+    assert.equal(nodes[0].metadata?.content, "赛博猫咪，身披机械外骨骼");
+    assert.equal(nodes[0].metadata?.status, "success");
 });
 
 test("M8 编辑节点单图重试保留原有参考图 UUID 清单与 edit 类型", async () => {

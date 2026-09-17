@@ -71,8 +71,6 @@ export function CanvasNodePromptPanel({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [node.id]);
     if (!canvasCapabilities.generation) return null;
-    if (mode === "image" && node.type === CanvasNodeType.Image && node.metadata?.content) return null;
-    if (mode === "video" && node.type === CanvasNodeType.Video && node.metadata?.content) return null;
     if (mode === "text" && !canvasCapabilities.auxiliaryText) return null;
     if (mode === "video" && !canvasCapabilities.video) return null;
     if (mode !== "image" && mode !== "text" && mode !== "video") return null;

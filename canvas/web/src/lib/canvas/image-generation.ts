@@ -43,7 +43,7 @@ export async function runCanvasImageGeneration(
         buildCanvasImageRequest(config, prompt, config.models);
     }
 
-    const reuse = Boolean(retry) || (source.type === CanvasNodeType.Image && !source.metadata?.content);
+    const reuse = Boolean(retry) || source.type === CanvasNodeType.Image;
     const targetId = reuse ? sourceId : nanoid();
     const generationId = nanoid();
     const pending: CanvasNodeImage[] = Array.from({ length: Number(config.count) }, () => ({ id: nanoid(), status: "loading", content: "", naturalWidth: 0, naturalHeight: 0, bytes: 0, mimeType: "" }));
@@ -163,7 +163,7 @@ export async function runCanvasImageGeneration(
                         generationId: undefined,
                         mjTaskId: undefined,
                         progress: undefined,
-                        status: node.metadata.content ? ("success" as const) : ("error" as const),
+                        status: "error" as const,
                         errorDetails,
                         images: node.metadata.images?.map((image) => (image.status === "loading" ? { ...image, status: "error" as const, errorDetails } : image)),
                     },
@@ -198,7 +198,7 @@ export async function runCanvasTextGeneration(
     const source = run.getNodes().find((node) => node.id === sourceId);
     if (!source) throw new DOMException("Aborted", "AbortError");
 
-    const reuse = Boolean(retry?.targetId) || (source.type === CanvasNodeType.Text && !source.metadata?.content);
+    const reuse = Boolean(retry?.targetId) || source.type === CanvasNodeType.Text;
     const targetId = retry?.targetId || (reuse ? sourceId : nanoid());
     const generationId = nanoid();
 

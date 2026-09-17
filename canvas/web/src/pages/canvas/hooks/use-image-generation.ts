@@ -106,8 +106,7 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                     }
                     references = resolvedRefs;
                 } else if (!retry) {
-                    const selfReference = readReferenceImage(source);
-                    references = context.referenceImages.length > 0 ? context.referenceImages : selfReference ? [selfReference] : [];
+                    references = context.referenceImages;
                 }
 
                 const isEdit = references.length > 0 || isRetryEdit;
@@ -213,7 +212,7 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
             const source = nodesRef.current.find((node) => node.id === sourceId);
             if (!source) return;
             const controller = new AbortController();
-            const targetNodeId = retryTarget?.targetId || (source.type === CanvasNodeType.Video && !source.metadata?.content ? sourceId : nanoid());
+            const targetNodeId = retryTarget?.targetId || (source.type === CanvasNodeType.Video ? sourceId : nanoid());
             const reuse = targetNodeId === sourceId;
             const run: Run = { controller, targetId: targetNodeId };
             runs.current.set(sourceId, run);
@@ -226,11 +225,7 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                 const effectivePrompt = prompt || source.metadata?.composerContent || source.metadata?.prompt || "";
                 const context = buildNodeGenerationContext(sourceId, nodesRef.current, connectionsRef.current, effectivePrompt);
                 let references = context.referenceImages;
-                if (!references.length) {
-                    const selfRef = readReferenceImage(source);
-                    if (selfRef) references = [selfRef];
-                }
-                if (!references.length && source.metadata?.references?.length) {
+                if (!references.length && retryTarget && source.metadata?.references?.length) {
                     const savedRefs = source.metadata.references;
                     const resolvedRefs: ReferenceImage[] = [];
                     for (const ref of savedRefs) {
@@ -308,8 +303,8 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                                       ...item,
                                       metadata: {
                                           ...item.metadata,
-                                          status: item.metadata?.content ? "success" : "error",
-                                          errorDetails: item.metadata?.content ? undefined : errorDetails,
+                                          status: "error" as const,
+                                          errorDetails,
                                           ...(isVideoTaskFailed(error) ? { videoTaskId: undefined } : {}),
                                       },
                                   }

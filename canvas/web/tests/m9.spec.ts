@@ -147,7 +147,7 @@ test("M9 图片反推提示词工作流：悬浮栏触发、拓扑派生、Base6
     }, { timeout: 10000 }).toBeGreaterThanOrEqual(3);
 });
 
-test("M9 文本节点修饰与指令扩写：派生新子文本节点并保留原始文本", async ({ page }) => {
+test("M9 文本节点修饰与指令扩写：原位流式改写当前文本节点并保持节点数不变", async ({ page }) => {
     let chatRequests = 0;
     let requestBody: any = null;
 
@@ -225,10 +225,9 @@ test("M9 文本节点修饰与指令扩写：派生新子文本节点并保留�
     expect(promptSent).toContain("一只可爱的赛博猫咪");
     expect(promptSent).toContain("加上机械外骨骼和太空背景");
 
-    // 验证原始文本节点保持不变
-    await expect(canvas.getByText("一只可爱的赛博猫咪").first()).toBeVisible({ timeout: 5000 });
-    // 验证新生成的子文本节点流式输出
+    // 验证原文本节点原位更新为修改后文本，且不派生新节点
     await expect(canvas.getByText("赛博猫咪，穿机械外骨骼，漂浮于太空。").first()).toBeVisible({ timeout: 10000 });
+    await expect(canvas.locator("[data-node-id]")).toHaveCount(1);
 });
 
 test("M9 流式生成中点击“停止”安全保留已输出文字且置为成功可用态", async ({ page }) => {

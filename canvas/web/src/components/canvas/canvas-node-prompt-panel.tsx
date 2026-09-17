@@ -47,6 +47,7 @@ export function CanvasNodePromptPanel({
     mentionReferences = [],
     connectedNodes = [],
     onDisconnectReference,
+    onStartReferenceSelection,
     onImageSettingsOpenChange,
     modeOverride,
 }: CanvasNodePromptPanelProps) {
@@ -97,7 +98,7 @@ export function CanvasNodePromptPanel({
                     {issues.join("\n")}
                 </div>
             ) : null}
-            <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} onDisconnect={onDisconnectReference} />
+            <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} />
             <CanvasPromptChipInput
                 value={prompt}
                 references={mentionReferences}
@@ -113,10 +114,7 @@ export function CanvasNodePromptPanel({
                 </Tooltip>
                 {canvasCapabilities.promptLibrary ? <CanvasPromptLibrary onSelect={updatePrompt} /> : null}
                 {isText ? (
-                    <div
-                        className="flex h-8 items-center rounded-md border px-2.5 text-xs font-medium"
-                        style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel, color: theme.node.text }}
-                    >
+                    <div className="flex h-8 items-center rounded-md border px-2.5 text-xs font-medium" style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel, color: theme.node.text }}>
                         {DEFAULT_AUXILIARY_TEXT_MODEL}
                     </div>
                 ) : isVideo ? (

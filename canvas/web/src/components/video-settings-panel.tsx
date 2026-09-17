@@ -87,20 +87,46 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
 }
 
 export function videoResolutionLabel(value: string) {
-    const raw = String(value || "").trim().toLowerCase();
+    const raw = String(value || "")
+        .trim()
+        .toLowerCase();
     return raw.includes("480") ? "480p" : "768p";
 }
 
 export function videoSizeLabel(value: string) {
-    const raw = String(value || "").trim().toLowerCase();
-    if (raw === "9:16" || raw.includes("竖") || raw.includes("portrait")) return i18n.t("settingsPanels.video.sizes.portrait");
-    if (raw === "1:1" || raw.includes("方") || raw.includes("square")) return i18n.t("settingsPanels.video.sizes.square");
+    const normalized = normalizeVideoSizeValue(value);
+    if (normalized === "9:16") return i18n.t("settingsPanels.video.sizes.portrait");
+    if (normalized === "1:1") return i18n.t("settingsPanels.video.sizes.square");
     return i18n.t("settingsPanels.video.sizes.landscape");
 }
 
 export function videoSecondsLabel(value: string) {
     const seconds = Math.max(1, Math.min(15, Number(value) || 5));
     return `${seconds}s`;
+}
+
+export function normalizeVideoModeValue(value: string | undefined) {
+    return value === "reference" ? "reference" : "frames";
+}
+
+export function videoModeLabel(value: string) {
+    return i18n.t(`settingsPanels.video.modes.${normalizeVideoModeValue(value)}`);
+}
+
+export function normalizeVideoSizeValue(value: string) {
+    const raw = String(value || "")
+        .trim()
+        .toLowerCase();
+    if (raw === "9:16" || raw.includes("竖") || raw.includes("portrait")) return "9:16";
+    if (raw === "1:1" || raw.includes("方") || raw.includes("square")) return "1:1";
+    return "16:9";
+}
+
+export function normalizeVideoResolutionValue(value: string) {
+    const raw = String(value || "")
+        .trim()
+        .toLowerCase();
+    return raw.includes("480") ? "480" : "768";
 }
 
 function OptionPill({ selected, disabled = false, theme, onClick, children }: { selected: boolean; disabled?: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {

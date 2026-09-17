@@ -238,12 +238,12 @@ test("Issue #35 - 连线拖拽创建快捷菜单选项与下游节点生成", as
     const menu = canvas.locator("[data-connection-create-menu]");
     await expect(menu).toBeVisible({ timeout: 5000 });
 
-    // 验证菜单项对齐：包含文本、图片、视频、配置，音频关闭隐藏
+    // 验证菜单项对齐：包含文本、图片、视频、配置与音频参考
     await expect(menu.getByText("文本生成")).toBeVisible();
     await expect(menu.getByText("图片生成")).toBeVisible();
     await expect(menu.getByText("视频生成")).toBeVisible();
     await expect(menu.getByText("配置节点")).toBeVisible();
-    await expect(menu.getByText("音频参考")).toHaveCount(0);
+    await expect(menu.getByText("音频参考")).toBeVisible();
 
     // 点击视频生成，生成下游连接的视频节点
     await menu.getByText("视频生成").click();

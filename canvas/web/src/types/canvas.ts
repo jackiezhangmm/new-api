@@ -75,6 +75,7 @@ export type CanvasNodeMetadata = {
     audioSpeed?: string;
     audioInstructions?: string;
     references?: string[];
+    audios?: string[];
     naturalWidth?: number;
     naturalHeight?: number;
     freeResize?: boolean;
@@ -169,4 +170,10 @@ export type ContextMenuState =
           x: number;
           y: number;
           connectionId: string;
+      }
+    | {
+          type: "canvas";
+          x: number;
+          y: number;
+          canvasPosition: Position;
       };

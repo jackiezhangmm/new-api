@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject
 import { App } from "antd";
 import { useTranslation } from "react-i18next";
 import { nanoid } from "nanoid";
-import { buildNodeGenerationContext, buildNodeResponseMessages, hydrateNodeGenerationContext, readReferenceImage } from "@/components/canvas/canvas-node-generation";
+import { buildNodeGenerationContext, buildNodeResponseMessages, hydrateNodeGenerationContext, readReferenceAudio, readReferenceImage } from "@/components/canvas/canvas-node-generation";
 import { buildGenerationConfig } from "@/lib/canvas/canvas-generation-helpers";
 import { runCanvasImageGeneration, runCanvasTextGeneration } from "@/lib/canvas/image-generation";
 import { auxiliaryTextIssues, DEFAULT_AUXILIARY_TEXT_MODEL, imageSettingsIssues } from "@/lib/canvas/image-models";
@@ -14,6 +14,7 @@ import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import type { AiConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasGenerationMode, type CanvasNodeData } from "@/types/canvas";
 import type { ReferenceImage } from "@/types/image";
+import type { ReferenceAudio } from "@/types/media";
 
 type Props = {
     projectId: string;
@@ -235,6 +236,17 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                     }
                     references = resolvedRefs;
                 }
+                let audios = context.referenceAudios;
+                if (!audios.length && retryTarget && source.metadata?.audios?.length) {
+                    const savedAudios = source.metadata.audios;
+                    const resolvedAudios: ReferenceAudio[] = [];
+                    for (const ref of savedAudios) {
+                        const matched = nodesRef.current.find((n) => n.metadata?.storageKey === ref || n.metadata?.content === ref || n.id === ref);
+                        const refAudio = matched ? readReferenceAudio(matched) : null;
+                        if (refAudio) resolvedAudios.push(refAudio);
+                    }
+                    audios = resolvedAudios;
+                }
                 const generationConfig = buildGenerationConfig(config, source, "video");
                 const issues = videoSettingsIssues(generationConfig, config.models, references.length);
                 if (issues.length) throw new Error(issues.join("\n"));
@@ -256,6 +268,7 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                         seconds: generationConfig.videoSeconds,
                         vquality: generationConfig.vquality,
                         references: references.map((r) => r.storageKey || r.url || r.dataUrl).filter(Boolean),
+                        audios: audios.map((a) => a.storageKey || a.url).filter(Boolean),
                     },
                 };
                 setNodes((prev) =>
@@ -265,7 +278,10 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                 );
                 if (!reuse) setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: sourceId, toNodeId: targetNodeId }]);
 
-                const task = await createVideoGenerationTask(generationConfig, effectivePrompt, references, { signal: controller.signal });
+                const task = await createVideoGenerationTask(generationConfig, effectivePrompt, references, {
+                    signal: controller.signal,
+                    audios,
+                });
                 setNodes((prev) =>
                     prev.map((item) =>
                         item.id === targetNodeId
@@ -286,6 +302,7 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                                   size: generationConfig.size,
                                   seconds: generationConfig.videoSeconds,
                                   vquality: generationConfig.vquality,
+                                  audios: audios.map((a) => a.storageKey || a.url).filter(Boolean),
                                   fallbackUrl,
                                   status: "success" as const,
                               })

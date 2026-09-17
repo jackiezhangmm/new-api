@@ -64,6 +64,23 @@ test("createVideoGenerationTask 序列化 JSON 载荷并通过会话头调用 /v
         ]);
         assert.equal(calledBody?.metadata?.resolution, "480p1:1");
 
+        // 传入音频时正确序列化至 payload 与 metadata.ref_audio_*
+        await createVideoGenerationTask(
+            config,
+            "with audio",
+            [{ id: "img-1", name: "ref.png", type: "image/png", dataUrl: "https://example.com/ref.png" }],
+            {
+                audios: [
+                    { id: "aud-1", name: "bgm.mp3", type: "audio/mpeg", url: "https://example.com/bgm.mp3" },
+                    { id: "aud-2", name: "vocal.mp3", type: "audio/mpeg", url: "https://example.com/vocal.mp3", storageKey: "https://example.com/vocal.mp3" },
+                ],
+            },
+        );
+        assert.equal(calledBody?.audio, "https://example.com/bgm.mp3");
+        assert.equal(calledBody?.audio_url, "https://example.com/bgm.mp3");
+        assert.equal(calledBody?.metadata?.ref_audio_0, "https://example.com/bgm.mp3");
+        assert.equal(calledBody?.metadata?.ref_audio_1, "https://example.com/vocal.mp3");
+
         // Missing reference image rejects
         await assert.rejects(
             () => createVideoGenerationTask(config, "no ref image", []),

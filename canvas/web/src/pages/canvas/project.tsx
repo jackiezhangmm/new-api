@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Group, Video } from "lucide-react";
+import { ChevronLeft, ChevronRight, Group, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
@@ -1042,7 +1042,62 @@ function InfiniteCanvasPage() {
     const angleNode = angleNodeId ? nodeById.get(angleNodeId) || null : null;
     const contextMenuNode = contextMenu?.type === "node" ? nodeById.get(contextMenu.nodeId) || null : null;
     const previewNode = previewNodeId ? nodeById.get(previewNodeId) || null : null;
-    const previewContent = previewImageId ? previewNode?.metadata?.images?.find((image) => image.id === previewImageId)?.content : previewNode?.metadata?.content;
+    const previewImages = useMemo(() => {
+        if (!previewNode) return [];
+        const validBatchImages = (previewNode.metadata?.images || []).filter((image) => Boolean(image.content));
+        if (validBatchImages.length > 0) return validBatchImages;
+        if (previewNode.metadata?.content) {
+            return [{ id: previewNode.id, content: previewNode.metadata.content }];
+        }
+        return [];
+    }, [previewNode]);
+    const currentPreviewIndex = useMemo(() => {
+        if (!previewImages.length) return -1;
+        if (previewImageId) {
+            const found = previewImages.findIndex((img) => img.id === previewImageId);
+            if (found !== -1) return found;
+        }
+        const primaryId = previewNode?.metadata?.primaryImageId;
+        if (primaryId) {
+            const found = previewImages.findIndex((img) => img.id === primaryId);
+            if (found !== -1) return found;
+        }
+        return 0;
+    }, [previewImages, previewImageId, previewNode]);
+    const activePreviewImage = previewImages[currentPreviewIndex] || null;
+    const previewContent = activePreviewImage?.content;
+
+    const handlePrevPreviewImage = useCallback(() => {
+        if (previewImages.length <= 1 || currentPreviewIndex < 0) return;
+        const nextIndex = (currentPreviewIndex - 1 + previewImages.length) % previewImages.length;
+        setPreviewImageId(previewImages[nextIndex].id);
+    }, [previewImages, currentPreviewIndex]);
+
+    const handleNextPreviewImage = useCallback(() => {
+        if (previewImages.length <= 1 || currentPreviewIndex < 0) return;
+        const nextIndex = (currentPreviewIndex + 1) % previewImages.length;
+        setPreviewImageId(previewImages[nextIndex].id);
+    }, [previewImages, currentPreviewIndex]);
+
+    const handleClosePreview = useCallback(() => {
+        setPreviewNodeId(null);
+        setPreviewImageId(null);
+    }, []);
+
+    useEffect(() => {
+        if (!previewContent || previewImages.length <= 1) return;
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                handlePrevPreviewImage();
+            } else if (event.key === "ArrowRight") {
+                event.preventDefault();
+                handleNextPreviewImage();
+            }
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [previewContent, previewImages.length, handlePrevPreviewImage, handleNextPreviewImage]);
     const hasMultipleSelectedNodes = selectedNodeIds.size > 1;
     const selectedNodes = useMemo(() => nodes.filter((node) => selectedNodeIds.has(node.id)), [nodes, selectedNodeIds]);
     const canGroupSelection = canGroupSelectedNodes(selectedNodeIds, nodes);
@@ -2691,7 +2746,7 @@ function InfiniteCanvasPage() {
     const handleImageInputChange = useCallback(
         async (event: ReactChangeEvent<HTMLInputElement>) => {
             const files = Array.from(event.target.files || []).filter(
-                (f) => f.type.startsWith("image/"),
+                (f) => f.type.startsWith("image/") || f.type.startsWith("video/") || isAudioFile(f),
             );
             if (!files.length) {
                 uploadTargetRef.current = null;
@@ -2869,11 +2924,15 @@ function InfiniteCanvasPage() {
         setTitleEditing(false);
     }, [currentProject?.title, executeSave, projectId, renameProject, titleDraft]);
 
-    const preventCanvasContextMenu = useCallback((event: ReactMouseEvent) => {
-        if ((event.target as HTMLElement).closest("[data-node-id]")) return;
-        event.preventDefault();
-        setContextMenu(null);
-    }, []);
+    const handleCanvasContextMenu = useCallback(
+        (event: ReactMouseEvent) => {
+            if ((event.target as HTMLElement).closest("[data-node-id]")) return;
+            event.preventDefault();
+            const canvasPosition = screenToCanvas(event.clientX, event.clientY);
+            setContextMenu({ type: "canvas", x: event.clientX, y: event.clientY, canvasPosition });
+        },
+        [screenToCanvas],
+    );
     useEffect(() => {
         generateNodeRef.current = handleGenerateNode;
     }, [handleGenerateNode]);
@@ -3093,7 +3152,7 @@ function InfiniteCanvasPage() {
 
     return (
         <main className="flex h-full min-h-0 overflow-hidden" style={{ background: theme.canvas.background, color: theme.node.text }}>
-            <CanvasSidePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onPreviewNode={setPreviewNodeId} onInsertAsset={handleAssetInsert} />
+            <CanvasSidePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onPreviewNode={(nodeId) => { setPreviewNodeId(nodeId); setPreviewImageId(null); }} onInsertAsset={handleAssetInsert} />
             <section className="relative min-w-0 flex-1 overflow-hidden">
                 <CanvasTopBar
                     title={currentProject?.title || t("canvas.projectPage.untitledCanvas")}
@@ -3139,7 +3198,7 @@ function InfiniteCanvasPage() {
                         setContextMenu(null);
                         setNodeCreatePosition(screenToCanvas(event.clientX, event.clientY));
                     }}
-                    onContextMenu={preventCanvasContextMenu}
+                    onContextMenu={handleCanvasContextMenu}
                     onDrop={handleDrop}
                 >
                     <svg className="absolute left-0 top-0 h-[10000px] w-[10000px] overflow-visible" style={{ pointerEvents: "none", transform: "translateZ(0)", zIndex: 0 }}>
@@ -3331,10 +3390,16 @@ function InfiniteCanvasPage() {
                         }}
                         onGroup={groupSelection}
                         onUngroup={ungroupSelection}
+                        onUploadAsset={() => {
+                            if (contextMenu.type !== "canvas") return;
+                            const pos = contextMenu.canvasPosition;
+                            setContextMenu(null);
+                            handleUploadRequest(undefined, pos);
+                        }}
                         onDelete={() => {
                             if (contextMenu.type === "node") {
                                 deleteNodes(new Set([contextMenu.nodeId]));
-                            } else {
+                            } else if (contextMenu.type === "connection") {
                                 deleteConnection(contextMenu.connectionId);
                             }
                             setContextMenu(null);
@@ -3342,7 +3407,7 @@ function InfiniteCanvasPage() {
                     />
                 ) : null}
 
-                <input ref={imageInputRef} type="file" multiple accept="image/*" className="hidden" onChange={handleImageInputChange} />
+                <input ref={imageInputRef} type="file" multiple accept="image/*,video/*,audio/*" className="hidden" onChange={handleImageInputChange} />
 
                 <CanvasNodeInfoModal node={infoNode} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
                 <CanvasPluginManagerModal open={pluginManagerOpen} onClose={() => setPluginManagerOpen(false)} />
@@ -3366,15 +3431,49 @@ function InfiniteCanvasPage() {
                 {angleNode?.metadata?.content ? <CanvasNodeAngleDialog dataUrl={angleNode.metadata.content} open={Boolean(angleNode)} onClose={() => setAngleNodeId(null)} onConfirm={(params) => void generateAngleNode(angleNode!, params)} /> : null}
 
                 <Modal
-                    title={t("canvas.projectPage.imageDetails")}
+                    title={previewImages.length > 1 ? `${t("canvas.projectPage.imageDetails")} (${currentPreviewIndex + 1} / ${previewImages.length})` : t("canvas.projectPage.imageDetails")}
                     open={Boolean(previewContent)}
                     centered
-                    onCancel={() => setPreviewNodeId(null)}
+                    onCancel={handleClosePreview}
                     footer={null}
                     width="auto"
                     styles={{ body: { padding: 0, display: "flex", justifyContent: "center", alignItems: "center", maxHeight: "80vh" } }}
                 >
-                    {previewContent ? <img src={previewContent} alt={previewNode?.title || t("assets.kinds.image")} style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain" }} /> : null}
+                    {previewContent ? (
+                        <div className="relative flex max-h-[80vh] max-w-full items-center justify-center">
+                            {previewImages.length > 1 ? (
+                                <button
+                                    type="button"
+                                    aria-label={t("canvas.projectPage.previousImage")}
+                                    data-testid="preview-prev-button"
+                                    className="absolute left-3 z-20 flex size-9 items-center justify-center rounded-full border bg-black/50 text-white backdrop-blur-md transition hover:scale-110 hover:bg-black/70 active:scale-95 cursor-pointer"
+                                    style={{ borderColor: "rgba(255,255,255,0.3)" }}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        handlePrevPreviewImage();
+                                    }}
+                                >
+                                    <ChevronLeft className="size-5" />
+                                </button>
+                            ) : null}
+                            <img src={previewContent} alt={previewNode?.title || t("assets.kinds.image")} style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain" }} />
+                            {previewImages.length > 1 ? (
+                                <button
+                                    type="button"
+                                    aria-label={t("canvas.projectPage.nextImage")}
+                                    data-testid="preview-next-button"
+                                    className="absolute right-3 z-20 flex size-9 items-center justify-center rounded-full border bg-black/50 text-white backdrop-blur-md transition hover:scale-110 hover:bg-black/70 active:scale-95 cursor-pointer"
+                                    style={{ borderColor: "rgba(255,255,255,0.3)" }}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        handleNextPreviewImage();
+                                    }}
+                                >
+                                    <ChevronRight className="size-5" />
+                                </button>
+                            ) : null}
+                        </div>
+                    ) : null}
                 </Modal>
 
                 <Modal

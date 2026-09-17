@@ -7,7 +7,8 @@ export const canvasCapabilities = {
     auxiliaryText: true,
     promptLibrary: true,
     video: true,
-    audio: false,
+    audio: true,
+    audioGeneration: false,
     plugins: false,
     agent: false,
     externalPrompts: false,
@@ -20,7 +21,7 @@ export function requireCanvasCapability(capability: keyof typeof canvasCapabilit
 }
 
 export function isCanvasNodeAllowed(type: string) {
-    return [CanvasNodeType.Image, CanvasNodeType.Text, CanvasNodeType.Config, CanvasNodeType.Group, CanvasNodeType.Video].some((allowed) => allowed === type);
+    return [CanvasNodeType.Image, CanvasNodeType.Text, CanvasNodeType.Config, CanvasNodeType.Group, CanvasNodeType.Video, CanvasNodeType.Audio].some((allowed) => allowed === type);
 }
 
 export function assertCanvasNodesAllowed(nodes: CanvasNodeData[]) {

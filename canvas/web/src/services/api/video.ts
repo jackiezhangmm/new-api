@@ -177,15 +177,27 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     }
 
     const headers = await getCanvasAuthHeaders();
+    const audioList = options?.audios
+        ? options.audios.map((audio) => audio.url || audio.storageKey).filter((v): v is string => Boolean(v))
+        : [];
+    const metadata: Record<string, unknown> = {
+        resolution: formatAutoDLResolution(config.vquality, config.size),
+    };
+    audioList.slice(0, 3).forEach((audioUrl, index) => {
+        metadata[`ref_audio_${index}`] = audioUrl;
+    });
+
     const payload: Record<string, unknown> = {
         model: modelOptionName(model),
         prompt,
         image: firstImage,
         duration,
-        metadata: {
-            resolution: formatAutoDLResolution(config.vquality, config.size),
-        },
+        metadata,
     };
+    if (audioList[0]) {
+        payload.audio = audioList[0];
+        payload.audio_url = audioList[0];
+    }
     if (imageList.length > 1) {
         payload.images = imageList;
     }

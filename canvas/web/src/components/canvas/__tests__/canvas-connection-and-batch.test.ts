@@ -20,17 +20,19 @@ test("Issue #35 - 连线快捷菜单对齐上游基线并遵循能力矩阵", ()
         }),
     );
 
-    // 默认具备 video 与 generation 能力，不具备 audio 能力
+    // 默认具备 video、audio 与 generation 能力
     assert.equal(html.includes("文本生成"), true, "应包含文本生成");
     assert.equal(html.includes("图片生成"), true, "应包含图片生成");
     assert.equal(html.includes("视频生成"), true, "应包含视频生成");
     assert.equal(html.includes("配置节点"), true, "应包含配置节点");
-    assert.equal(html.includes("音频参考"), false, "音频关闭时不得展示音频选项");
+    assert.equal(html.includes("音频参考"), true, "音频开启时应展示音频选项");
 
     // 动态关闭能力时隐藏对应选项
     const origVideo = canvasCapabilities.video;
+    const origAudio = canvasCapabilities.audio;
     try {
         (canvasCapabilities as any).video = false;
+        (canvasCapabilities as any).audio = false;
         const htmlWithoutVideo = renderToString(
             React.createElement(ConnectionCreateMenu, {
                 pending: { connection: { nodeId: "node-1", handleType: "source" }, position: { x: 100, y: 100 } },
@@ -39,8 +41,10 @@ test("Issue #35 - 连线快捷菜单对齐上游基线并遵循能力矩阵", ()
             }),
         );
         assert.equal(htmlWithoutVideo.includes("视频生成"), false, "video 能力关闭时不展示视频选项");
+        assert.equal(htmlWithoutVideo.includes("音频参考"), false, "audio 能力关闭时不展示音频选项");
     } finally {
         (canvasCapabilities as any).video = origVideo;
+        (canvasCapabilities as any).audio = origAudio;
     }
 });
 

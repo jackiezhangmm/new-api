@@ -70,6 +70,7 @@ export function CanvasNodePromptPanel({
         // 切换节点时恢复输入，生成回写不覆盖仍在编辑的提示词。
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [node.id]);
+    if (node.type === CanvasNodeType.Audio) return null;
     if (!canvasCapabilities.generation) return null;
     if (mode === "text" && !canvasCapabilities.auxiliaryText) return null;
     if (mode === "video" && !canvasCapabilities.video) return null;

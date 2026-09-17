@@ -215,7 +215,7 @@ function readReferenceVideo(node: CanvasNodeData): ReferenceVideo | null {
     };
 }
 
-function readReferenceAudio(node: CanvasNodeData): ReferenceAudio | null {
+export function readReferenceAudio(node: CanvasNodeData): ReferenceAudio | null {
     if (node.type !== CanvasNodeType.Audio || !node.metadata?.content) return null;
     return {
         id: node.id,

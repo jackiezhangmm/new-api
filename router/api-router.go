@@ -168,6 +168,13 @@ func SetApiRouter(router *gin.Engine) {
 			imageRoute.GET("/:id", controller.GetImage)
 		}
 
+		mediaRoute := apiRouter.Group("/media")
+		mediaRoute.Use(middleware.UserAuth())
+		{
+			mediaRoute.POST("", controller.UploadMedia)
+			mediaRoute.GET("/:id", controller.GetMedia)
+		}
+
 		canvasRoute := apiRouter.Group("/canvas")
 		canvasRoute.Use(
 			middleware.TokenOrUserAuth(),

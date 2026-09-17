@@ -272,6 +272,38 @@ func TokenOrUserAuth() func(c *gin.Context) {
 	}
 }
 
+// OptionalTokenOrUserAuth allows session-based or token-based auth if provided, but does not reject unauthenticated requests.
+func OptionalTokenOrUserAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		raw, ok := authorizationToken(c.GetHeader("Authorization"))
+		if !ok {
+			c.Next()
+			return
+		}
+		identity, internal, err := service.ParseDashboardAccessToken(raw)
+		if internal {
+			if err == nil {
+				if _, user, err := service.ValidateLoginSession(identity); err == nil {
+					setDashboardAuthContext(c, user, identity, false)
+				}
+			}
+			c.Next()
+			return
+		}
+		key := raw
+		if strings.HasPrefix(key, "sk-") {
+			key = strings.TrimPrefix(key, "sk-")
+			parts := strings.Split(key, "-")
+			key = parts[0]
+		}
+		if token, err := model.ValidateUserToken(key); err == nil && token != nil {
+			c.Set("id", token.UserId)
+			c.Set("user_id", token.UserId)
+		}
+		c.Next()
+	}
+}
+
 func setPlaygroundRelayTokenName(c *gin.Context, group string) {
 	c.Set("token_name", fmt.Sprintf("playground-%s", group))
 }

@@ -49,6 +49,9 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
             const metadata = node.metadata;
             const content = metadata?.content;
             if (node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) {
+                if (content && (content.startsWith("http://") || content.startsWith("https://") || content.startsWith("/"))) {
+                    return node;
+                }
                 if (metadata?.storageKey) {
                     const fallback = (metadata.fallbackUrl as string | undefined) || content;
                     return { ...node, metadata: { ...metadata, content: await resolveMediaUrl(metadata.storageKey, fallback) } };

@@ -8,10 +8,10 @@ import (
 )
 
 func SetVideoRouter(router *gin.Engine) {
-	// Video proxy: accepts either session auth (dashboard) or token auth (API clients)
+	// Video proxy: accepts either session auth (dashboard) or token auth (API clients), or unauthenticated playback by task_id
 	videoProxyRouter := router.Group("/v1")
 	videoProxyRouter.Use(middleware.RouteTag("relay"))
-	videoProxyRouter.Use(middleware.TokenOrUserAuth())
+	videoProxyRouter.Use(middleware.OptionalTokenOrUserAuth())
 	{
 		videoProxyRouter.GET("/videos/:task_id/content", controller.VideoProxy)
 	}

@@ -218,6 +218,11 @@ test("Issue #37 - 启用音频节点但不展示生成面板，且作为视频�
                     metadata: {
                         status: "idle",
                         prompt: "自然风光",
+                        model: "minimax_h3_zm_u24",
+                        vquality: "480",
+                        size: "16:9",
+                        seconds: 5,
+                        generationMode: "video",
                     },
                 },
             ],

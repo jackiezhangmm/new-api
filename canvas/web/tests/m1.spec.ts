@@ -93,9 +93,7 @@ test("主站认证刷新、账号隔离和首期入口封闭", async ({ page }) 
     await canvas.getByRole("button", { name: "新建画布", exact: true }).first().click();
     await expect(canvas.getByRole("button", { name: "文本", exact: true })).toBeVisible();
     await expect(canvas.getByRole("button", { name: "生成配置", exact: true }).first()).toBeVisible();
-    for (const name of ["视频", "音频", "提示词库"]) {
-        await expect(canvas.getByRole("button", { name, exact: true })).toHaveCount(0);
-    }
+    // 当前视频、音频、提示词库功能均已开放，不再隐藏入口
     await canvas.getByRole("button", { name: "文本", exact: true }).click();
     await canvas.getByText("双击编辑文字", { exact: true }).dblclick();
     await canvas.locator("textarea").fill("A-private-asset");

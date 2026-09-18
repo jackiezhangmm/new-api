@@ -141,6 +141,13 @@ test("Issue #35 - 参考图栏加号按钮与交互式连线选图闭环", async
                     height: 240,
                     metadata: {
                         status: "idle",
+                        prompt: "",
+                        model: "gpt-image-2",
+                        resolution: "1k",
+                        aspectRatio: "1:1",
+                        quality: "",
+                        count: "1",
+                        generationMode: "image",
                     },
                 },
             ],

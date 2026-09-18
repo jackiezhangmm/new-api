@@ -7,8 +7,10 @@
         "dev": "vite --host 0.0.0.0 --port 3000",
         "build": "vite build",
         "typecheck": "tsc --noEmit",
-        "test": "bun test src",
+        "test": "bun run test:unit",
+        "test:unit": "bun test src",
         "test:e2e": "playwright test",
+        "test:all": "bun run test:unit && bun run test:e2e",
         "start": "vite preview --host 0.0.0.0 --port 3000",
         "format": "prettier --write .",
         "format:check": "prettier --check ."

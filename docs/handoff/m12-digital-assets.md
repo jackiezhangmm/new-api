@@ -83,10 +83,10 @@
 go test -v ./controller -run TestDigitalAsset
 
 # 2. 运行画布单元测试
-cd canvas/web && bun test
+cd canvas/web && bun run test:unit
 
 # 3. 运行主站单元测试
-cd web && bun test
+cd web && bun run test
 
 # 4. 运行画布 E2E 测试（依赖主站 dev 环境已启动）
 cd canvas/web && bun run test:e2e

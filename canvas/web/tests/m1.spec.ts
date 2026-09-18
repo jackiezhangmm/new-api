@@ -6,6 +6,39 @@ test("主站认证刷新、账号隔离和首期入口封闭", async ({ page }) 
         a: [],
         b: [],
     };
+    const userAssets: Record<string, any[]> = { a: [], b: [] };
+    let nextAssetId = 1;
+    let account = "a";
+
+    await page.route("**/api/digital-assets/**", async (route) => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (request.method() === "POST") {
+            const body = request.postDataJSON() || {};
+            const asset = {
+                id: nextAssetId++,
+                user_id: account === "a" ? 901 : 902,
+                asset_type: body.asset_type || "text",
+                title: body.title || "",
+                content: body.content || "",
+                is_favorite: false,
+                created_at: Math.floor(Date.now() / 1000),
+                updated_at: Math.floor(Date.now() / 1000),
+                tags: [],
+            };
+            userAssets[account].unshift(asset);
+            await route.fulfill({ json: { success: true, data: asset } });
+            return;
+        }
+        if (request.method() === "GET") {
+            const isTags = url.pathname.endsWith("/tags");
+            const items = userAssets[account];
+            await route.fulfill({ json: { success: true, data: isTags ? [] : { page: 1, page_size: 50, total: items.length, items } } });
+            return;
+        }
+        await route.continue();
+    });
+
     await page.route("**/api/canvas/projects**", async (route) => {
         const currentUserId = account === "a" ? 901 : 902;
         const currentList = userProjects[account] || [];
@@ -53,7 +86,6 @@ test("主站认证刷新、账号隔离和首期入口封闭", async ({ page }) 
             await route.continue();
         }
     });
-    let account = "a";
     let refreshes = 0;
     const modelHeaders: string[] = [];
     const errors: string[] = [];
@@ -101,34 +133,12 @@ test("主站认证刷新、账号隔离和首期入口封闭", async ({ page }) 
     await canvas.locator("section").getByText("A-private-asset", { exact: true }).hover();
     await canvas.getByRole("button", { name: "加入我的资产", exact: true }).click();
     await canvas.getByRole("button", { name: "资产", exact: true }).click();
-    await expect(canvas.getByText("A-private-asset", { exact: true })).toHaveCount(2);
+    await expect(canvas.locator('[data-node-id]').getByText("A-private-asset", { exact: true })).toBeVisible();
+    await expect(canvas.locator('[title="A-private-asset"]')).toBeVisible();
     await canvas.getByTitle("双击修改画布名称").dblclick();
     await canvas.getByRole("textbox", { name: "双击修改画布名称" }).fill("A-private-project");
     await canvas.getByRole("textbox", { name: "双击修改画布名称" }).press("Enter");
-    const child = page.frames().find((frame) => frame.parentFrame())!;
-    await expect
-        .poll(() =>
-            child.evaluate(
-                () =>
-                    new Promise<boolean>((resolve, reject) => {
-                        const request = indexedDB.open("infinite-canvas");
-                        request.onerror = () => reject(request.error);
-                        request.onsuccess = () => {
-                            const db = request.result;
-                            const read = db.transaction("app_state").objectStore("app_state").get("infinite-canvas:asset_store:901");
-                            read.onsuccess = () => {
-                                resolve(String(read.result).includes("A-private-asset"));
-                                db.close();
-                            };
-                            read.onerror = () => {
-                                reject(read.error);
-                                db.close();
-                            };
-                        };
-                    }),
-            ),
-        )
-        .toBe(true);
+    await expect.poll(() => userAssets.a.some((asset) => asset.title === "A-private-asset")).toBe(true);
     await page.screenshot({ path: "/tmp/new-api-canvas-m1-desktop.png", fullPage: true });
     account = "b";
     await page.reload();

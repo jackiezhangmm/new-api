@@ -93,12 +93,13 @@ test("Issue #36 - 已有图像节点重新生成原地覆写且不派生新节�
     let editCalled = false;
     let requestPayload: { prompt?: string } | null = null;
 
-    await page.route("**/v1/images/generations", async (route) => {
+    await page.route("**/api/canvas/images/generations", async (route) => {
         generationCalled = true;
         requestPayload = route.request().postDataJSON();
         await route.fulfill({
             status: 200,
             json: {
+                success: true,
                 data: [
                     {
                         url: "https://s3.example.test/images/regenerated-cat.png",
@@ -256,7 +257,7 @@ test("Issue #36 - 视频节点点击悬浮工具栏编辑按钮正常展开提�
 test("Issue #36 - 已有图像节点重新生成失败进入标准错误态并支持重试", async ({ page }) => {
     let callCount = 0;
 
-    await page.route("**/v1/images/generations", async (route) => {
+    await page.route("**/api/canvas/images/generations", async (route) => {
         callCount++;
         if (callCount === 1) {
             await route.fulfill({
@@ -269,6 +270,7 @@ test("Issue #36 - 已有图像节点重新生成失败进入标准错误态并�
             await route.fulfill({
                 status: 200,
                 json: {
+                    success: true,
                     data: [
                         {
                             url: "https://s3.example.test/images/retry-success.png",

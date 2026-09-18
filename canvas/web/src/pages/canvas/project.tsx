@@ -1307,14 +1307,18 @@ function InfiniteCanvasPage() {
 
     const selectNodeReference = useCallback((fromNodeId: string) => {
         if (!referencePickerNodeId || referenceConnectedNodeIds.has(fromNodeId)) return;
+        const targetNodeId = referencePickerNodeId;
         const source = nodesRef.current.find((node) => node.id === fromNodeId);
         if (!source || !isCanvasReferenceNode(source, nodesRef.current)) return;
-        const exceededMax = checkReferenceLimitExceeded(referencePickerNodeId, fromNodeId, nodesRef.current, connectionsRef.current, effectiveConfig.imageModel);
+        const exceededMax = checkReferenceLimitExceeded(targetNodeId, fromNodeId, nodesRef.current, connectionsRef.current, effectiveConfig.imageModel);
         if (exceededMax !== null) {
             message.warning(t("canvas.projectPage.maxReferencesReached", { max: exceededMax }));
             return;
         }
-        setConnections((prev) => [...prev, { id: nanoid(), fromNodeId, toNodeId: referencePickerNodeId }]);
+        setConnections((prev) => [...prev, { id: nanoid(), fromNodeId, toNodeId: targetNodeId }]);
+        setSelectedNodeIds(new Set([targetNodeId]));
+        setDialogNodeId(targetNodeId);
+        setReferencePickerNodeId(null);
     }, [effectiveConfig.imageModel, message, referenceConnectedNodeIds, referencePickerNodeId, t]);
 
     useEffect(() => {

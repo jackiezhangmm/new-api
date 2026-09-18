@@ -8,7 +8,7 @@ import { clampVideoSeconds, computeVideoSize, inferVideoRatio } from "@/lib/medi
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { getCanvasAuthHeaders } from "@/services/host-auth";
-import { getCanvasVideoModel } from "@/lib/canvas/video-models";
+import { getCanvasVideoModel, videoSettingsIssues, DEFAULT_CANVAS_VIDEO_MODEL } from "@/lib/canvas/video-models";
 import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
@@ -151,39 +151,29 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
     throw new Error(apiText("noPlayableVideo"));
 }
 
-export function formatAutoDLResolution(vquality?: string, size?: string) {
-    const rawQuality = String(vquality || "").trim().toLowerCase();
-    const quality = rawQuality.includes("480") ? "480p" : "768p";
-    const rawSize = String(size || "").trim().toLowerCase();
-    if (rawQuality.includes("竖") || rawSize === "9:16" || rawSize.includes("竖") || rawSize.includes("portrait")) {
-        return `${quality}竖`;
-    }
-    if (rawQuality.includes("1:1") || rawQuality.includes("方") || rawSize === "1:1" || rawSize.includes("方") || rawSize.includes("square")) {
-        return `${quality}1:1`;
-    }
-    return `${quality}横`;
+export function formatAutoDLResolution(vquality = "768", size = "16:9", model = DEFAULT_CANVAS_VIDEO_MODEL) {
+    return getCanvasVideoModel(model)?.resolutions[vquality]?.[size];
 }
 
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
-    const imageList = references.map((r) => r.dataUrl || r.url).filter((v): v is string => Boolean(v));
-    const firstImage = imageList[0] || "";
-    const def = getCanvasVideoModel(model);
-    if (def?.requiresReferenceImage && !firstImage) {
-        throw new Error(i18n.t("integration.videoReferenceRequired"));
+    const issues = videoSettingsIssues(config, [model], { imageCount: references.length, audioCount: options?.audios?.length || 0, videoCount: options?.videos?.length || 0 });
+    if (issues.length) throw new Error(issues.join("\n"));
+    const def = getCanvasVideoModel(model)!;
+    if (!prompt.trim() || [...prompt].length > def.maxPrompt) {
+        throw new Error(i18n.t("integration.videoPromptLimit", { max: def.maxPrompt }));
     }
-    const duration = Number(normalizeVideoSeconds(config.videoSeconds)) || 5;
-    if (def && (duration < def.minDuration || duration > def.maxDuration)) {
-        throw new Error(i18n.t("integration.invalidSettings", { fields: i18n.t("settingsPanels.video.seconds") }));
+    const imageList = references.map((r) => r.dataUrl || r.url);
+    const audioList = (options?.audios || []).map((audio) => audio.url);
+    if (imageList.some((image) => !image) || audioList.some((audio) => !audio)) {
+        throw new Error(i18n.t("integration.videoReferenceUnavailable"));
     }
-
+    const firstImage = imageList[0];
+    const duration = Number(config.videoSeconds);
     const headers = await getCanvasAuthHeaders();
-    const audioList = options?.audios
-        ? options.audios.map((audio) => audio.url || audio.storageKey).filter((v): v is string => Boolean(v))
-        : [];
     const metadata: Record<string, unknown> = {
-        resolution: formatAutoDLResolution(config.vquality, config.size),
+        resolution: formatAutoDLResolution(config.vquality, config.size, model),
     };
-    audioList.slice(0, 3).forEach((audioUrl, index) => {
+    audioList.forEach((audioUrl, index) => {
         metadata[`ref_audio_${index}`] = audioUrl;
     });
 

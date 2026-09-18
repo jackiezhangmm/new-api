@@ -1,5 +1,10 @@
 export default {
     integration: {
+        videoImageLimit: "This model supports at most {{max}} reference images",
+        videoAudioLimit: "This model requires {{min}}–{{max}} reference audio clips",
+        videoReferencesUnsupported: "This model does not support reference videos. Remove the video inputs.",
+        videoPromptLimit: "The prompt must contain 1–{{max}} characters",
+        videoReferenceUnavailable: "Cannot read the reference media. Please select it again.",
         unavailable: "This feature is not available yet",
         unsupportedProject: "This project contains unsupported nodes or generation modes and cannot be opened yet. The original data has not been changed.",
         hostRequired: "Open the canvas from the main application",

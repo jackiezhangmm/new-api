@@ -169,7 +169,7 @@ test("AbortSignal 触发时中断视频生成与轮询", async () => {
 
     try {
         const controller = new AbortController();
-        const config = { ...defaultConfig, model: "minimax_h3_zm_u24" };
+        const config = { ...defaultConfig, model: "minimax_h3_zm_u24", vquality: "768", size: "16:9", videoSeconds: "5" };
         const promise = createVideoGenerationTask(
             config,
             "aborted prompt",

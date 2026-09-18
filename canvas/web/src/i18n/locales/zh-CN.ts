@@ -1,5 +1,10 @@
 export default {
     integration: {
+        videoImageLimit: "此模型最多支持 {{max}} 张参考图片",
+        videoAudioLimit: "此模型需要 {{min}}–{{max}} 段参考音频",
+        videoReferencesUnsupported: "此模型不支持参考视频，请移除视频输入",
+        videoPromptLimit: "提示词长度必须为 1–{{max}} 个字符",
+        videoReferenceUnavailable: "参考素材无法读取，请重新选择",
         unavailable: "此功能尚未开放",
         unsupportedProject: "此工程包含尚未开放的节点或生成模式，暂时无法打开；原数据未修改。",
         hostRequired: "请从主站的无限画布入口打开",

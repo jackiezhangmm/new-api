@@ -61,7 +61,11 @@ export function CanvasNodePromptPanel({
     const issues = isText
         ? auxiliaryTextIssues(globalConfig.models, DEFAULT_AUXILIARY_TEXT_MODEL)
         : isVideo
-          ? videoSettingsIssues(config, config.models, connectedNodes.filter((n) => n.type === CanvasNodeType.Image).length)
+          ? videoSettingsIssues(config, config.models, {
+                imageCount: connectedNodes.filter((n) => n.type === CanvasNodeType.Image).length,
+                audioCount: connectedNodes.filter((n) => n.type === CanvasNodeType.Audio).length,
+                videoCount: connectedNodes.filter((n) => n.type === CanvasNodeType.Video).length,
+            })
           : imageSettingsIssues(config, config.models);
     const [prompt, setPrompt] = useState(node.metadata?.composerContent ?? node.metadata?.prompt ?? "");
     const [expanded, setExpanded] = useState(false);

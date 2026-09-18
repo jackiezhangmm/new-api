@@ -3,6 +3,7 @@ import { Slider } from "antd";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
+import { getCanvasVideoModel } from "@/lib/canvas/video-models";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { type AiConfig } from "@/stores/use-config-store";
@@ -37,10 +38,14 @@ type VideoSettingsPanelProps = {
 
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[300px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
     const { t } = useTranslation();
-    const rawSeconds = Number(config.videoSeconds) || 5;
-    const seconds = Math.max(1, Math.min(15, rawSeconds));
-    const resolution = config.vquality === "480" ? "480" : "768";
-    const selectedRatio = config.size === "9:16" || config.size === "1:1" ? config.size : "16:9";
+    const def = getCanvasVideoModel(config.model || config.videoModel);
+    const maxSeconds = def?.maxDuration || 15;
+    const seconds = Number(config.videoSeconds) || 5;
+    const resolution = config.vquality;
+    const selectedRatio = config.size;
+    const resolutions = def ? Object.keys(def.resolutions).map((value) => ({ value, label: `${value}p` })) : resolutionOptions;
+    const resolutionForRatios = def && def.resolutions[config.vquality] ? config.vquality : def ? Object.keys(def.resolutions)[0] : "";
+    const ratios = def ? videoRatioOptions.filter((item) => Boolean(def.resolutions[resolutionForRatios]?.[item.value])) : videoRatioOptions;
 
     return (
         <ImageSettingsTheme theme={theme}>
@@ -48,7 +53,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.video.title")}</div> : null}
                 <SettingGroup title={t("settingsPanels.video.quality")} color={theme.node.muted}>
                     <div className="grid grid-cols-2 gap-2.5">
-                        {resolutionOptions.map((item) => (
+                        {resolutions.map((item) => (
                             <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("vquality", item.value)}>
                                 {item.label}
                             </OptionPill>
@@ -57,7 +62,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.size")} color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
-                        {videoRatioOptions.map((item) => (
+                        {ratios.map((item) => (
                             <button
                                 key={item.value}
                                 type="button"
@@ -74,8 +79,8 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.seconds")} color={theme.node.muted}>
                     <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
-                        <Slider className="min-w-0 flex-1" min={1} max={15} step={1} value={seconds} onChange={(value) => onConfigChange("videoSeconds", String(Array.isArray(value) ? value[0] : value))} />
-                        <SecondsInput value={seconds} theme={theme} onCommit={(value) => onConfigChange("videoSeconds", String(value))} />
+                        <Slider className="min-w-0 flex-1" min={1} max={maxSeconds} step={1} value={seconds} onChange={(value) => onConfigChange("videoSeconds", String(Array.isArray(value) ? value[0] : value))} />
+                        <SecondsInput max={maxSeconds} value={seconds} theme={theme} onCommit={(value) => onConfigChange("videoSeconds", String(value))} />
                         <span className="shrink-0 text-sm" style={{ color: theme.node.muted }}>
                             s
                         </span>
@@ -90,7 +95,7 @@ export function videoResolutionLabel(value: string) {
     const raw = String(value || "")
         .trim()
         .toLowerCase();
-    return raw.includes("480") ? "480p" : "768p";
+    return raw ? `${raw.replace(/p$/, "")}p` : "—";
 }
 
 export function videoSizeLabel(value: string) {
@@ -155,9 +160,9 @@ function SettingGroup({ title, color, children }: { title: string; color: string
     );
 }
 
-function SecondsInput({ value, theme, onCommit }: { value: number; theme: CanvasTheme; onCommit: (value: number) => void }) {
+function SecondsInput({ value, max, theme, onCommit }: { value: number; max: number; theme: CanvasTheme; onCommit: (value: number) => void }) {
     const commit = (input: HTMLInputElement) => {
-        const next = Math.max(1, Math.min(15, Math.floor(Number(input.value) || 5)));
+        const next = Math.max(1, Math.min(max, Math.floor(Number(input.value) || 5)));
         input.value = String(next);
         onCommit(next);
     };
@@ -167,7 +172,7 @@ function SecondsInput({ value, theme, onCommit }: { value: number; theme: Canvas
             <input
                 type="number"
                 min={1}
-                max={15}
+                max={max}
                 className="min-w-0 flex-1 bg-transparent px-2 text-center outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 defaultValue={value}
                 key={value}

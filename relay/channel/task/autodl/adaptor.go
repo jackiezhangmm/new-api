@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel"
 	taskcommon "github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -29,12 +31,12 @@ const (
 	maxDuration     = 15
 )
 
-var modelList = []string{"minimax_h3_zm_u24"}
+var modelList = []string{"minimax_h3_zm_u24", "minimax_h3_lightx2v_v5", "minimax_h3_b99_003_12s", "minimax_h3_z0901", "minimax_h3_z0903"}
 
 type requestPayload struct {
 	Prompt     string  `json:"prompt"`
 	Duration   int     `json:"duration"`
-	RefImage0  string  `json:"ref_image_0"`
+	RefImage0  string  `json:"ref_image_0,omitempty"`
 	Seed       *int64  `json:"seed,omitempty"`
 	Resolution *string `json:"resolution,omitempty"`
 	RefImage1  *string `json:"ref_image_1,omitempty"`
@@ -106,16 +108,34 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	if err != nil {
 		return service.TaskErrorWrapper(err, "get_task_request_failed", http.StatusBadRequest)
 	}
-	image := strings.TrimSpace(req.Image)
-	if image == "" && len(req.Images) > 0 {
-		image = strings.TrimSpace(req.Images[0])
+	// 参数验证发生在公共任务链路的模型映射之前，提前解析以免别名绕过工作流限制。
+	mapped := *info
+	meta := *info.ChannelMeta
+	mapped.ChannelMeta = &meta
+	if mapped.OriginModelName == "" {
+		mapped.OriginModelName = req.Model
 	}
-	if image == "" {
+	if mapped.OriginModelName != "" {
+		mapped.UpstreamModelName = mapped.OriginModelName
+	}
+	if err := helper.ModelMappedHelper(c, &mapped, nil); err != nil {
+		return service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
+	}
+	workflow := mapped.UpstreamModelName
+	if err := normalizeReferences(&req, workflow); err != nil {
+		return service.TaskErrorWrapperLocal(err, "invalid_references", http.StatusBadRequest)
+	}
+	spec, known := workflows[workflow]
+	if (!known || spec.maxImages > 0) && req.Image == "" {
 		return service.TaskErrorWrapperLocal(fmt.Errorf("image is required"), "missing_image", http.StatusBadRequest)
 	}
-	if _, err := requestDuration(req); err != nil {
+	if _, err := requestDuration(req, workflow); err != nil {
 		return service.TaskErrorWrapperLocal(err, "invalid_duration", http.StatusBadRequest)
 	}
+	if err := validateWorkflow(req, workflow); err != nil {
+		return service.TaskErrorWrapperLocal(err, "invalid_workflow_parameters", http.StatusBadRequest)
+	}
+	c.Set("task_request", req)
 	info.Action = constant.TaskActionGenerate
 	return nil
 }
@@ -134,12 +154,12 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 	return nil
 }
 
-func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, _ *relaycommon.RelayInfo) (io.Reader, error) {
+func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayInfo) (io.Reader, error) {
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil, err
 	}
-	body, err := a.requestPayload(req)
+	body, err := a.requestPayload(req, info.UpstreamModelName)
 	if err != nil {
 		return nil, errors.Wrap(err, "build autodl request payload failed")
 	}
@@ -150,8 +170,8 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, _ *relaycommon.RelayInfo)
 	return bytes.NewReader(data), nil
 }
 
-func (a *TaskAdaptor) requestPayload(req relaycommon.TaskSubmitReq) (*requestPayload, error) {
-	duration, err := requestDuration(req)
+func (a *TaskAdaptor) requestPayload(req relaycommon.TaskSubmitReq, workflow string) (*requestPayload, error) {
+	duration, err := requestDuration(req, workflow)
 	if err != nil {
 		return nil, err
 	}
@@ -173,20 +193,34 @@ func (a *TaskAdaptor) requestPayload(req relaycommon.TaskSubmitReq) (*requestPay
 	}, nil
 }
 
-func requestDuration(req relaycommon.TaskSubmitReq) (int, error) {
+func requestDuration(req relaycommon.TaskSubmitReq, workflow string) (int, error) {
+	limit := maxDuration
+	if spec, ok := workflows[workflow]; ok {
+		limit = spec.maxDuration
+	}
 	duration := req.Duration
+	if duration == 0 && req.Seconds != "" {
+		parsed, err := strconv.Atoi(req.Seconds)
+		if err != nil {
+			return 0, fmt.Errorf("seconds must be an integer")
+		}
+		duration = parsed
+	}
 	metadata := metadataFields{}
 	if err := req.UnmarshalMetadata(&metadata); err != nil {
 		return 0, err
 	}
 	if metadata.Duration != nil {
 		duration = *metadata.Duration
+		if duration == 0 {
+			return 0, fmt.Errorf("duration must be between 1 and %d", limit)
+		}
 	}
 	if duration == 0 {
 		return defaultDuration, nil
 	}
-	if duration < 1 || duration > maxDuration {
-		return 0, fmt.Errorf("duration must be between 1 and %d", maxDuration)
+	if duration < 1 || duration > limit {
+		return 0, fmt.Errorf("duration must be between 1 and %d", limit)
 	}
 	return duration, nil
 }
@@ -254,16 +288,24 @@ func (a *TaskAdaptor) GetModelList() []string { return modelList }
 
 func (a *TaskAdaptor) GetChannelName() string { return channelName }
 
-func (a *TaskAdaptor) EstimateBilling(c *gin.Context, _ *relaycommon.RelayInfo) map[string]float64 {
+func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
 		return nil
 	}
-	duration, err := requestDuration(req)
+	duration, err := requestDuration(req, info.UpstreamModelName)
 	if err != nil {
 		return nil
 	}
-	return map[string]float64{"seconds": float64(duration), "resolution": resolutionRatio(metadataResolution(req))}
+	ratio := resolutionRatio(metadataResolution(req))
+	if spec, ok := workflows[info.UpstreamModelName]; ok {
+		if r, exists := spec.resolutions[metadataResolution(req)]; exists && r > 0 {
+			ratio = r
+		} else {
+			ratio = 1.0
+		}
+	}
+	return map[string]float64{"seconds": float64(duration), "resolution": ratio}
 }
 
 func resolutionRatio(resolution string) float64 {

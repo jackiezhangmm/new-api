@@ -248,7 +248,7 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                     audios = resolvedAudios;
                 }
                 const generationConfig = buildGenerationConfig(config, source, "video");
-                const issues = videoSettingsIssues(generationConfig, config.models, references.length);
+                const issues = videoSettingsIssues(generationConfig, config.models, { imageCount: references.length, audioCount: audios.length, videoCount: context.referenceVideos.length });
                 if (issues.length) throw new Error(issues.join("\n"));
 
                 const spec = nodeSizeFromRatio(generationConfig.size, NODE_DEFAULT_SIZE[CanvasNodeType.Video].width, NODE_DEFAULT_SIZE[CanvasNodeType.Video].height) || NODE_DEFAULT_SIZE[CanvasNodeType.Video];

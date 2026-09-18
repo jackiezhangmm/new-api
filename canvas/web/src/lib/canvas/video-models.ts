@@ -5,23 +5,58 @@ export const DEFAULT_CANVAS_VIDEO_MODEL = "minimax_h3_zm_u24";
 
 export type CanvasVideoModelDefinition = {
     model: string;
-    label: string;
-    resolutions: string[];
-    minDuration: number;
+    resolutions: Record<string, Record<string, string>>;
     maxDuration: number;
-    defaultDuration: number;
-    requiresReferenceImage: boolean;
+    maxPrompt: number;
+    maxImages: number;
+    minAudio: number;
+    maxAudio: number;
 };
 
 export const canvasVideoModels: CanvasVideoModelDefinition[] = [
     {
-        model: "minimax_h3_zm_u24",
-        label: "MiniMax H3 (AutoDL)",
-        resolutions: ["480p", "768p"],
-        minDuration: 1,
-        maxDuration: 15,
-        defaultDuration: 5,
-        requiresReferenceImage: true,
+        model: DEFAULT_CANVAS_VIDEO_MODEL,
+        maxDuration: 15, maxPrompt: 10000, maxImages: 9, minAudio: 0, maxAudio: 3,
+        resolutions: {
+            "480": { "16:9": "480p横", "9:16": "480p竖", "1:1": "480p1:1" },
+            "768": { "16:9": "768p横", "9:16": "768p竖", "1:1": "768p1:1" },
+        },
+    },
+    {
+        model: "minimax_h3_lightx2v_v5",
+        maxDuration: 10, maxPrompt: 500000, maxImages: 9, minAudio: 0, maxAudio: 0,
+        resolutions: {
+            "480": { "16:9": "480p横", "9:16": "480p竖", "1:1": "480p(1:1)" },
+            "768": { "16:9": "768p横", "9:16": "768p竖", "1:1": "768p(1:1)" },
+            "1080": { "16:9": "1080p横", "9:16": "1080p竖", "1:1": "1080p(1:1)" },
+        },
+    },
+    {
+        model: "minimax_h3_b99_003_12s",
+        maxDuration: 12, maxPrompt: 10000, maxImages: 9, minAudio: 0, maxAudio: 0,
+        resolutions: {
+            "736": { "16:9": "736p横", "9:16": "736p竖", "1:1": "736p(1:1)" },
+        },
+    },
+    {
+        model: "minimax_h3_z0901",
+        maxDuration: 15, maxPrompt: 10000, maxImages: 0, minAudio: 0, maxAudio: 0,
+        resolutions: {
+            "480": { "16:9": "480p横(864*480)", "9:16": "480p竖(480*864)" },
+            "768": { "16:9": "768p横(1344*768)", "9:16": "768p竖(768*1344)" },
+            "1088": { "16:9": "1088p横(1920*1088)", "9:16": "1088p竖(1088*1920)" },
+            "1440": { "16:9": "1440p横(2560*1440)", "9:16": "1440p竖(1440*2560)" },
+        },
+    },
+    {
+        model: "minimax_h3_z0903",
+        maxDuration: 15, maxPrompt: 10000, maxImages: 6, minAudio: 1, maxAudio: 3,
+        resolutions: {
+            "480": { "16:9": "480p横(864*480)", "9:16": "480p竖(480*864)" },
+            "768": { "16:9": "768p横(1376*768)", "9:16": "768p竖(768*1376)" },
+            "1088": { "16:9": "1088p横(1920*1088)", "9:16": "1088p竖(1088*1920)" },
+            "1440": { "16:9": "1440p横(2560*1440)", "9:16": "1440p竖(1440*2560)" },
+        },
     },
 ];
 
@@ -47,20 +82,36 @@ export function filterCanvasVideoModels(available: readonly string[]) {
     return canvasVideoModels.filter((item) => available.includes(item.model)).map((item) => item.model);
 }
 
-export function videoSettingsIssues(config: AiConfig, available: readonly string[], referenceCount = 0): string[] {
+export type VideoReferenceCounts = {
+    imageCount?: number;
+    audioCount?: number;
+    videoCount?: number;
+};
+
+export function videoSettingsIssues(config: AiConfig, available: readonly string[], counts: VideoReferenceCounts = {}): string[] {
+    const { imageCount = 0, audioCount = 0, videoCount = 0 } = counts;
     const issues: string[] = [];
     const model = (config.model || config.videoModel || "").trim();
-    if (!model || !available.includes(model)) {
-        issues.push(i18n.t("integration.modelUnavailable", { model: model || "unknown" }));
-        return issues;
-    }
     const def = getCanvasVideoModel(model);
-    if (def?.requiresReferenceImage && referenceCount < 1) {
+    if (!def || !available.includes(model)) {
+        return [i18n.t("integration.modelUnavailable", { model: model || "unknown" })];
+    }
+    if (def.maxImages > 0 && imageCount < 1) {
         issues.push(i18n.t("integration.videoReferenceRequired"));
     }
-    const seconds = Number(config.videoSeconds) || 5;
-    if (def && (seconds < def.minDuration || seconds > def.maxDuration)) {
+    if (imageCount > def.maxImages) {
+        issues.push(i18n.t("integration.videoImageLimit", { max: def.maxImages }));
+    }
+    if (audioCount < def.minAudio || audioCount > def.maxAudio) {
+        issues.push(i18n.t("integration.videoAudioLimit", { min: def.minAudio, max: def.maxAudio }));
+    }
+    if (videoCount > 0) issues.push(i18n.t("integration.videoReferencesUnsupported"));
+    const seconds = Number(config.videoSeconds);
+    if (!Number.isInteger(seconds) || seconds < 1 || seconds > def.maxDuration) {
         issues.push(i18n.t("integration.invalidSettings", { fields: i18n.t("settingsPanels.video.seconds") }));
+    }
+    if (!def.resolutions[config.vquality]?.[config.size]) {
+        issues.push(i18n.t("integration.invalidSettings", { fields: `${i18n.t("settingsPanels.video.quality")} / ${i18n.t("settingsPanels.video.size")}` }));
     }
     return issues;
 }

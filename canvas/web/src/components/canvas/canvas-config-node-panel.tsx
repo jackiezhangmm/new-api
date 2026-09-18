@@ -35,7 +35,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
     const config = buildGenerationConfig(effectiveConfig, node, mode);
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const chipStyle = { background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text };
-    const issues = isText ? auxiliaryTextIssues(effectiveConfig.models, DEFAULT_AUXILIARY_TEXT_MODEL) : isVideo ? videoSettingsIssues(config, config.models, inputSummary.imageCount) : imageSettingsIssues(config, config.models);
+    const issues = isText ? auxiliaryTextIssues(effectiveConfig.models, DEFAULT_AUXILIARY_TEXT_MODEL) : isVideo ? videoSettingsIssues(config, config.models, { imageCount: inputSummary.imageCount, audioCount: inputSummary.audioCount, videoCount: inputSummary.videoCount }) : imageSettingsIssues(config, config.models);
     const hasPrompt = Boolean((node.metadata?.composerContent ?? node.metadata?.prompt ?? "").trim()) || inputSummary.textCount > 0;
 
     if (!canvasCapabilities.generation) return null;

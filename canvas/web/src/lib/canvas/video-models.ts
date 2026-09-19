@@ -64,6 +64,41 @@ export function getCanvasVideoModel(model: string) {
     return canvasVideoModels.find((item) => item.model === model);
 }
 
+export type VideoSettings = {
+    model: string;
+    seconds: string;
+    vquality: string;
+    size: string;
+};
+
+export function switchVideoModel(current: { seconds?: string; vquality?: string; size?: string }, model: string) {
+    const def = getCanvasVideoModel(model);
+    if (!def) return { settings: { ...current, model }, adjusted: [] as string[] };
+    const settings = {
+        model,
+        seconds: current.seconds || defaultVideoSettings.seconds,
+        vquality: current.vquality || defaultVideoSettings.vquality,
+        size: current.size || defaultVideoSettings.size,
+    };
+    const adjusted: string[] = [];
+    const availableQualities = Object.keys(def.resolutions);
+    if (!availableQualities.includes(settings.vquality)) {
+        settings.vquality = availableQualities[0] || "768";
+        adjusted.push("quality");
+    }
+    const availableSizes = def.resolutions[settings.vquality] ? Object.keys(def.resolutions[settings.vquality]) : ["16:9"];
+    if (!availableSizes.includes(settings.size)) {
+        settings.size = availableSizes[0] || "16:9";
+        adjusted.push("size");
+    }
+    const seconds = Number(settings.seconds);
+    if (!Number.isInteger(seconds) || seconds < 1 || seconds > def.maxDuration) {
+        settings.seconds = String(Math.min(def.maxDuration, Math.max(1, seconds || 5)));
+        adjusted.push("seconds");
+    }
+    return { settings, adjusted };
+}
+
 export const defaultVideoSettings = {
     model: DEFAULT_CANVAS_VIDEO_MODEL,
     seconds: "5",

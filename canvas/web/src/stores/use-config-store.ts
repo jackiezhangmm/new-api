@@ -1,5 +1,5 @@
-import { defaultImageSettings, DEFAULT_AUXILIARY_TEXT_MODEL, filterCanvasAuxiliaryTextModels, filterCanvasImageModels } from "@/lib/canvas/image-models";
-import { DEFAULT_CANVAS_VIDEO_MODEL, filterCanvasVideoModels } from "@/lib/canvas/video-models";
+import { defaultImageSettings, DEFAULT_AUXILIARY_TEXT_MODEL, filterCanvasAuxiliaryTextModels, filterCanvasImageModels, getCanvasImageModel } from "@/lib/canvas/image-models";
+import { DEFAULT_CANVAS_VIDEO_MODEL, filterCanvasVideoModels, getCanvasVideoModel } from "@/lib/canvas/video-models";
 import { canvasCapabilities, requireCanvasCapability } from "@/lib/canvas/canvas-capabilities";
 import { useMemo } from "react";
 import { create } from "zustand";
@@ -181,7 +181,11 @@ function findChannelModel(config: AiConfig, value: string): { channel: ModelChan
 }
 
 export function modelCapabilityOf(config: AiConfig, value: string): ModelCapability | undefined {
-    return findChannelModel(config, value)?.model.capability;
+    const channelCap = findChannelModel(config, value)?.model.capability;
+    if (channelCap) return channelCap;
+    if (getCanvasVideoModel(value)) return "video";
+    if (getCanvasImageModel(value)) return "image";
+    return guessCapability(value);
 }
 
 export function modelMatchesCapability(config: AiConfig, value: string, capability?: ModelCapability) {

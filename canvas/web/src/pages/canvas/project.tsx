@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { useImageGeneration } from "./hooks/use-image-generation";
 import { DEFAULT_AUXILIARY_TEXT_MODEL, getCanvasImageModel, switchImageModel } from "@/lib/canvas/image-models";
+import { switchVideoModel } from "@/lib/canvas/video-models";
 import { canvasCapabilities, assertCanvasNodesAllowed } from "@/lib/canvas/canvas-capabilities";
 import { pollMidjourneyTask, requestEdit } from "@/services/api/image";
 import { isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
@@ -2367,11 +2368,21 @@ function InfiniteCanvasPage() {
     const handleConfigNodeChange = useCallback((nodeId: string, patch: Partial<CanvasNodeData["metadata"]>) => {
         const node = nodesRef.current.find((item) => item.id === nodeId);
         if (!node) return;
-        const targetMode = patch?.generationMode || node.metadata?.generationMode || "image";
+        const targetMode = patch?.generationMode || node.metadata?.generationMode || (node.type === CanvasNodeType.Video ? "video" : node.type === CanvasNodeType.Text ? "text" : "image");
         if (targetMode === "image" && patch?.model) {
             const { settings, adjusted } = switchImageModel(buildGenerationConfig(effectiveConfig, node, "image"), patch.model);
             patch = { ...settings, count: Number(settings.count) };
             if (adjusted.length) message.info(t("integration.settingsAdjusted", { fields: adjusted.map((field) => t(`integration.settings.${field}`)).join("、") }));
+        } else if (targetMode === "video" && patch?.model) {
+            const { settings, adjusted } = switchVideoModel({ seconds: node.metadata?.seconds, vquality: node.metadata?.vquality, size: node.metadata?.size }, patch.model);
+            patch = { ...settings };
+            if (adjusted.length) {
+                message.info(
+                    t("integration.settingsAdjusted", {
+                        fields: adjusted.map((field) => (field === "seconds" ? t("settingsPanels.video.seconds") : t(`integration.settings.${field}`))).join("、"),
+                    }),
+                );
+            }
         }
         setNodes((prev) => prev.map((item) => (item.id === nodeId ? applyNodeConfigPatch(item, patch) : item)));
     }, [effectiveConfig, message, t]);

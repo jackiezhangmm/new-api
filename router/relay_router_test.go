@@ -555,6 +555,21 @@ func TestVideosRouterAcceptsSessionAndAPIToken(t *testing.T) {
 	updatedToken, err := model.GetTokenById(realToken.Id)
 	require.NoError(t, err)
 	assert.Equal(t, initialTokenQuota, updatedToken.RemainQuota)
+
+	// 5. Test /v1/videos/generations route aliases
+	fetchAliasReq := httptest.NewRequest(http.MethodGet, "/v1/videos/generations/owned-video-task", nil)
+	fetchAliasReq.Header.Set("Authorization", "Bearer "+accessToken)
+	fetchAliasResp := httptest.NewRecorder()
+	engine.ServeHTTP(fetchAliasResp, fetchAliasReq)
+	require.Equal(t, http.StatusOK, fetchAliasResp.Code)
+	assert.Contains(t, fetchAliasResp.Body.String(), `"id":"owned-video-task"`)
+
+	submitAliasReq := httptest.NewRequest(http.MethodPost, "/v1/videos/generations", strings.NewReader(`{"model":"minimax_h3_zm_u24","prompt":"make another video","image":"https://example.com/a.png","duration":5}`))
+	submitAliasReq.Header.Set("Authorization", "Bearer "+accessToken)
+	submitAliasReq.Header.Set("Content-Type", "application/json")
+	submitAliasResp := httptest.NewRecorder()
+	engine.ServeHTTP(submitAliasResp, submitAliasReq)
+	require.Equal(t, http.StatusOK, submitAliasResp.Code, submitAliasResp.Body.String())
 }
 
 func TestListModelsSupportsOpenAIAndGeminiAuthentication(t *testing.T) {

@@ -24,6 +24,8 @@ func SetVideoRouter(router *gin.Engine) {
 	{
 		videoV1Router.POST("/videos", controller.RelayTask)
 		videoV1Router.GET("/videos/:task_id", controller.RelayTaskFetch)
+		videoV1Router.POST("/videos/generations", controller.RelayTask)
+		videoV1Router.GET("/videos/generations/:task_id", controller.RelayTaskFetch)
 	}
 
 	legacyVideoRouter := router.Group("/v1")

@@ -267,6 +267,8 @@ var defaultModelRatio = map[string]float64{
 	"deepseek-ai/DeepSeek-R1":                 0.8,
 	"deepseek-ai/DeepSeek-V3-0324":            0.8,
 	"deepseek-ai/DeepSeek-V3.1":               0.8,
+	"wan3.0-video":                            0.3,
+	"wan3.0-video-prime":                      0.3,
 }
 
 var defaultModelPrice = map[string]float64{

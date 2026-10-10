@@ -247,8 +247,16 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                     }
                     audios = resolvedAudios;
                 }
+                if (references.length === 2 && source.metadata?.videoFrameSwap) {
+                    references = [references[1], references[0]];
+                }
                 const generationConfig = buildGenerationConfig(config, source, "video");
-                const issues = videoSettingsIssues(generationConfig, config.models, { imageCount: references.length, audioCount: audios.length, videoCount: context.referenceVideos.length });
+                const issues = videoSettingsIssues(generationConfig, config.models, {
+                    imageCount: references.length,
+                    audioCount: audios.length,
+                    videoCount: context.referenceVideos.length,
+                    prompt: effectivePrompt,
+                });
                 if (issues.length) throw new Error(issues.join("\n"));
 
                 const spec = nodeSizeFromRatio(generationConfig.size, NODE_DEFAULT_SIZE[CanvasNodeType.Video].width, NODE_DEFAULT_SIZE[CanvasNodeType.Video].height) || NODE_DEFAULT_SIZE[CanvasNodeType.Video];
@@ -267,6 +275,9 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                         size: generationConfig.size,
                         seconds: generationConfig.videoSeconds,
                         vquality: generationConfig.vquality,
+                        negativePrompt: generationConfig.negativePrompt,
+                        generateAudio: generationConfig.videoGenerateAudio,
+                        videoMode: generationConfig.videoMode,
                         references: references.map((r) => r.storageKey || r.url || r.dataUrl).filter(Boolean),
                         audios: audios.map((a) => a.storageKey || a.url).filter(Boolean),
                     },
@@ -302,6 +313,9 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                                   size: generationConfig.size,
                                   seconds: generationConfig.videoSeconds,
                                   vquality: generationConfig.vquality,
+                                  negativePrompt: generationConfig.negativePrompt,
+                                  generateAudio: generationConfig.videoGenerateAudio,
+                                  videoMode: generationConfig.videoMode,
                                   audios: audios.map((a) => a.storageKey || a.url).filter(Boolean),
                                   fallbackUrl,
                                   status: "success" as const,

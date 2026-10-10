@@ -137,6 +137,8 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                         config={config}
                         placement="topRight"
                         buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2"
+                        imageCount={inputSummary.imageCount}
+                        audioCount={inputSummary.audioCount}
                         onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))}
                     />
                 ) : (
@@ -154,7 +156,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                 type="primary"
                 className="mt-auto !h-9 !w-full !cursor-pointer !rounded-lg"
                 danger={isRunning}
-                disabled={!isRunning && (!hasPrompt || issues.length > 0)}
+                disabled={!isRunning && ((!(isVideo && inputSummary.imageCount > 0) && !hasPrompt) || issues.length > 0)}
                 onMouseDown={(event) => event.stopPropagation()}
                 onClick={() => (isRunning ? onStop(node.id) : onGenerate(node.id))}
             >

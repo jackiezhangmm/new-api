@@ -47,6 +47,7 @@ export type AiConfig = {
     videoGenerateAudio: string;
     videoWatermark: string;
     videoMode: string;
+    negativePrompt?: string;
     systemPrompt: string;
     reasoningEffort: ReasoningEffort;
     models: string[];
@@ -116,6 +117,7 @@ export const defaultConfig: AiConfig = {
     videoGenerateAudio: "true",
     videoWatermark: "false",
     videoMode: "frames",
+    negativePrompt: "",
     systemPrompt: "",
     reasoningEffort: "auto",
     models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts", DEFAULT_CANVAS_VIDEO_MODEL],
@@ -197,6 +199,15 @@ export function resolveModelForCapability(config: AiConfig, currentModel: string
     if (capability === "image") return currentModel ?? config.imageModel;
     const defaultModel = capability === "video" ? config.videoModel : capability === "audio" ? config.audioModel : config.textModel;
     const fallbackModel = capability === "video" ? defaultConfig.videoModel : capability === "audio" ? defaultConfig.audioModel : defaultConfig.textModel;
+    if (capability === "video") {
+        const availableVideo = filterCanvasVideoModels(config.models);
+        if (currentModel && availableVideo.includes(currentModel)) return currentModel;
+        if (defaultModel && availableVideo.includes(defaultModel)) return defaultModel;
+        if (availableVideo.length > 0) return availableVideo[0];
+        if (currentModel && modelMatchesCapability(config, currentModel, capability)) return currentModel;
+        if (defaultModel && modelMatchesCapability(config, defaultModel, capability)) return defaultModel;
+        return fallbackModel;
+    }
     if (currentModel && modelMatchesCapability(config, currentModel, capability)) return currentModel;
     if (defaultModel && modelMatchesCapability(config, defaultModel, capability)) return defaultModel;
     return fallbackModel;

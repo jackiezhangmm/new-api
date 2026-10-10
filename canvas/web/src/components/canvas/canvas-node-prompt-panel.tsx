@@ -57,17 +57,21 @@ export function CanvasNodePromptPanel({
     const mode = modeOverride ?? (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Config ? "image" : node.type === CanvasNodeType.Video ? "video" : "text");
     const isText = mode === "text";
     const isVideo = mode === "video";
+    const imageCount = connectedNodes.filter((n) => n.type === CanvasNodeType.Image).length;
+    const audioCount = connectedNodes.filter((n) => n.type === CanvasNodeType.Audio).length;
+    const videoCount = connectedNodes.filter((n) => n.type === CanvasNodeType.Video).length;
     const config = isText ? globalConfig : buildGenerationConfig(globalConfig, node, mode);
+    const [prompt, setPrompt] = useState(node.metadata?.composerContent ?? node.metadata?.prompt ?? "");
     const issues = isText
         ? auxiliaryTextIssues(globalConfig.models, DEFAULT_AUXILIARY_TEXT_MODEL)
         : isVideo
           ? videoSettingsIssues(config, config.models, {
-                imageCount: connectedNodes.filter((n) => n.type === CanvasNodeType.Image).length,
-                audioCount: connectedNodes.filter((n) => n.type === CanvasNodeType.Audio).length,
-                videoCount: connectedNodes.filter((n) => n.type === CanvasNodeType.Video).length,
+                imageCount,
+                audioCount,
+                videoCount,
+                prompt,
             })
           : imageSettingsIssues(config, config.models);
-    const [prompt, setPrompt] = useState(node.metadata?.composerContent ?? node.metadata?.prompt ?? "");
     const [expanded, setExpanded] = useState(false);
     useEffect(() => {
         setPrompt(node.metadata?.composerContent ?? node.metadata?.prompt ?? "");
@@ -84,8 +88,10 @@ export function CanvasNodePromptPanel({
         setPrompt(value);
         onPromptChange(node.id, value);
     };
+    const isPromptRequired = !(isVideo && imageCount > 0);
+    const canSubmit = !isRunning && !issues.length && (!isPromptRequired || Boolean(prompt.trim()));
     const submit = () => {
-        if (prompt.trim() && !isRunning && !issues.length) onGenerate(node.id, mode, prompt.trim());
+        if (canSubmit) onGenerate(node.id, mode, prompt.trim());
     };
     return (
         <div
@@ -101,7 +107,18 @@ export function CanvasNodePromptPanel({
                     {issues.join("\n")}
                 </div>
             ) : null}
-            <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} />
+            <CanvasNodeReferenceBar
+                nodeId={node.id}
+                nodes={nodes}
+                connectedNodes={connectedNodes}
+                onDisconnect={onDisconnectReference}
+                onStartSelection={onStartReferenceSelection}
+                isVideo={isVideo}
+                videoMode={node.metadata?.videoMode}
+                isFrameSwap={Boolean(node.metadata?.videoFrameSwap)}
+                onToggleFrameSwap={() => onConfigChange(node.id, { videoFrameSwap: !node.metadata?.videoFrameSwap })}
+                onToggleVideoMode={() => onConfigChange(node.id, { videoMode: node.metadata?.videoMode === "reference" ? "frame" : "reference" })}
+            />
             <CanvasPromptChipInput
                 value={prompt}
                 references={mentionReferences}
@@ -123,7 +140,7 @@ export function CanvasNodePromptPanel({
                 ) : isVideo ? (
                     <>
                         <ModelPicker config={config} value={config.model || DEFAULT_CANVAS_VIDEO_MODEL} onChange={(model) => onConfigChange(node.id, { model })} capability="video" className="max-w-[190px]" />
-                        <CanvasVideoSettingsPopover config={config} onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
+                        <CanvasVideoSettingsPopover config={config} onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} imageCount={imageCount} audioCount={audioCount} />
                     </>
                 ) : (
                     <>
@@ -135,7 +152,7 @@ export function CanvasNodePromptPanel({
                     type="primary"
                     className="!ml-auto !h-9 !w-9 !p-0"
                     danger={isRunning}
-                    disabled={!isRunning && (!prompt.trim() || issues.length > 0)}
+                    disabled={!isRunning && !canSubmit}
                     onClick={() => (isRunning ? onStop(node.id) : submit())}
                     aria-label={t(isRunning ? "canvas.promptPanel.stopGeneration" : "canvas.promptPanel.generate")}
                     icon={isRunning ? <Square className="size-4" /> : <ArrowUp className="size-4" />}

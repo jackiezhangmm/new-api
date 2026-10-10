@@ -102,6 +102,113 @@ test("createVideoGenerationTask 序列化 JSON 载荷并通过会话头调用 /v
     }
 });
 
+test("createVideoGenerationTask Wan3.0 协议分流、拓扑推导与顶级载荷序列化", async () => {
+    const postBefore = axios.post;
+    let account = "902";
+    useUserStore.setState({ user: { id: account, username: "test", displayName: "", avatarUrl: "" } });
+    globalThis.window = {
+        parent: {
+            newApiCanvasHost: {
+                getUser: () => ({ id: account }),
+                getAuthHeaders: async () => ({ Authorization: "Bearer test-session-token" }),
+                subscribe: () => () => {},
+            },
+        },
+    } as unknown as Window & typeof globalThis;
+
+    let calledBody: any = null;
+    axios.post = (async (_url: string, body: any) => {
+        calledBody = body;
+        return { data: { id: "wan-task-001" } };
+    }) as typeof axios.post;
+
+    try {
+        const wanConfig = {
+            ...defaultConfig,
+            model: "wan3.0-video",
+            videoSeconds: "6",
+            vquality: "1080",
+            size: "16:9",
+            negativePrompt: "lowres, artifacts",
+            videoGenerateAudio: "true",
+        };
+
+        // 1. 文生视频（0 张图片）
+        const task1 = await createVideoGenerationTask(wanConfig, "cyberpunk city street", []);
+        assert.equal(task1.id, "wan-task-001");
+        assert.equal(task1.provider, "openai");
+        assert.equal(task1.model, "wan3.0-video");
+        assert.equal(calledBody.model, "wan3.0-video");
+        assert.equal(calledBody.prompt, "cyberpunk city street");
+        assert.equal(calledBody.negative_prompt, "lowres, artifacts");
+        assert.equal(calledBody.resolution, "1080P");
+        assert.equal(calledBody.size, "16:9");
+        assert.equal(calledBody.duration, 6);
+        assert.equal(calledBody.audio, true);
+        assert.equal(calledBody.image, undefined);
+        assert.equal(calledBody.image_with_roles, undefined);
+        assert.equal(calledBody.image_urls, undefined);
+
+        // 文生视频下无提示词应被拦截
+        await assert.rejects(
+            () => createVideoGenerationTask(wanConfig, "   ", []),
+            /提示词/,
+        );
+
+        // 2. 单图图生视频（推导为首帧）且留空提示词允许生成
+        await createVideoGenerationTask(wanConfig, "", [
+            { id: "img-1", name: "1.png", type: "image/png", dataUrl: "https://example.com/1.png" },
+        ]);
+        assert.equal(calledBody.prompt, "");
+        assert.equal(calledBody.generation_type, "frame");
+        assert.deepEqual(calledBody.image_with_roles, [{ url: "https://example.com/1.png", role: "first_frame" }]);
+        assert.deepEqual(calledBody.image_urls, ["https://example.com/1.png"]);
+
+        // 3. 双图默认推导为首尾帧模式
+        await createVideoGenerationTask(wanConfig, "smooth transition", [
+            { id: "img-1", name: "1.png", type: "image/png", dataUrl: "https://example.com/1.png" },
+            { id: "img-2", name: "2.png", type: "image/png", dataUrl: "https://example.com/2.png" },
+        ]);
+        assert.equal(calledBody.generation_type, "frame");
+        assert.deepEqual(calledBody.image_with_roles, [
+            { url: "https://example.com/1.png", role: "first_frame" },
+            { url: "https://example.com/2.png", role: "last_frame" },
+        ]);
+
+        // 4. 双图在显式 reference 模式下推导为参考图模式
+        await createVideoGenerationTask({ ...wanConfig, videoMode: "reference" }, "reference style", [
+            { id: "img-1", name: "1.png", type: "image/png", dataUrl: "https://example.com/1.png" },
+            { id: "img-2", name: "2.png", type: "image/png", dataUrl: "https://example.com/2.png" },
+        ]);
+        assert.equal(calledBody.generation_type, "reference");
+        assert.deepEqual(calledBody.image_urls, ["https://example.com/1.png", "https://example.com/2.png"]);
+        assert.equal(calledBody.image_with_roles, undefined);
+
+        // 5. 三图自动推导为参考图模式，连入外部音频时禁用伴生音频并写入 audio_urls
+        await createVideoGenerationTask(
+            wanConfig,
+            "multi reference with audio",
+            [
+                { id: "img-1", name: "1.png", type: "image/png", dataUrl: "https://example.com/1.png" },
+                { id: "img-2", name: "2.png", type: "image/png", dataUrl: "https://example.com/2.png" },
+                { id: "img-3", name: "3.png", type: "image/png", dataUrl: "https://example.com/3.png" },
+            ],
+            {
+                audios: [
+                    { id: "aud-1", name: "sound.mp3", type: "audio/mpeg", url: "https://example.com/sound.mp3" },
+                ],
+            },
+        );
+        assert.equal(calledBody.generation_type, "reference");
+        assert.deepEqual(calledBody.image_urls, ["https://example.com/1.png", "https://example.com/2.png", "https://example.com/3.png"]);
+        assert.deepEqual(calledBody.audio_urls, ["https://example.com/sound.mp3"]);
+        assert.equal(calledBody.audio_url, "https://example.com/sound.mp3");
+        assert.equal(calledBody.audio, false);
+    } finally {
+        axios.post = postBefore;
+    }
+});
+
 test("pollVideoGenerationTask 通过会话头轮询 /v1/videos/:id 并返回结果", async () => {
     const getBefore = axios.get;
     let account = "902";

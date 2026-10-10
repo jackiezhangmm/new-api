@@ -156,40 +156,100 @@ export function formatAutoDLResolution(vquality = "768", size = "16:9", model = 
 }
 
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
-    const issues = videoSettingsIssues(config, [model], { imageCount: references.length, audioCount: options?.audios?.length || 0, videoCount: options?.videos?.length || 0 });
+    const issues = videoSettingsIssues(config, [model], {
+        imageCount: references.length,
+        audioCount: options?.audios?.length || 0,
+        videoCount: options?.videos?.length || 0,
+        prompt,
+    });
     if (issues.length) throw new Error(issues.join("\n"));
     const def = getCanvasVideoModel(model)!;
-    if (!prompt.trim() || [...prompt].length > def.maxPrompt) {
+    if (def.protocol !== "standard" && !prompt.trim()) {
         throw new Error(i18n.t("integration.videoPromptLimit", { max: def.maxPrompt }));
     }
-    const imageList = references.map((r) => r.dataUrl || r.url);
-    const audioList = (options?.audios || []).map((audio) => audio.url);
-    if (imageList.some((image) => !image) || audioList.some((audio) => !audio)) {
+    if (references.length === 0 && !prompt.trim()) {
+        throw new Error(i18n.t("integration.videoPromptRequired"));
+    }
+    if ([...prompt].length > def.maxPrompt) {
+        throw new Error(i18n.t("integration.videoPromptLimit", { max: def.maxPrompt }));
+    }
+    const imageList = references.map((r) => r.dataUrl || r.url).filter((img): img is string => Boolean(img));
+    const audioList = (options?.audios || []).map((audio) => audio.url).filter((aud): aud is string => Boolean(aud));
+    if (references.some((r) => !r.dataUrl && !r.url) || (options?.audios || []).some((a) => !a.url)) {
         throw new Error(i18n.t("integration.videoReferenceUnavailable"));
     }
-    const firstImage = imageList[0];
     const duration = Number(config.videoSeconds);
     const headers = await getCanvasAuthHeaders();
-    const metadata: Record<string, unknown> = {
-        resolution: formatAutoDLResolution(config.vquality, config.size, model),
-    };
-    audioList.forEach((audioUrl, index) => {
-        metadata[`ref_audio_${index}`] = audioUrl;
-    });
 
-    const payload: Record<string, unknown> = {
-        model: modelOptionName(model),
-        prompt,
-        image: firstImage,
-        duration,
-        metadata,
-    };
-    if (audioList[0]) {
-        payload.audio = audioList[0];
-        payload.audio_url = audioList[0];
-    }
-    if (imageList.length > 1) {
-        payload.images = imageList;
+    let payload: Record<string, unknown>;
+
+    if (def.protocol === "standard") {
+        const resolution = `${config.vquality.toUpperCase().replace(/P$/, "")}P`;
+        const size = config.size || "16:9";
+        const negativePrompt = (config.negativePrompt || (config as any).videoNegativePrompt || "").trim();
+
+        payload = {
+            model: modelOptionName(model),
+            prompt,
+            resolution,
+            size,
+            duration,
+        };
+
+        if (negativePrompt) {
+            payload.negative_prompt = negativePrompt;
+        }
+
+        if (audioList.length > 0) {
+            payload.audio_urls = audioList;
+            payload.audio_url = audioList[0];
+            payload.audio = false;
+        } else {
+            payload.audio = boolConfig(config.videoGenerateAudio, true);
+        }
+
+        if (imageList.length === 1) {
+            payload.generation_type = "frame";
+            payload.image_with_roles = [{ url: imageList[0], role: "first_frame" }];
+            payload.image_urls = [imageList[0]];
+        } else if (imageList.length === 2) {
+            if (config.videoMode === "reference") {
+                payload.generation_type = "reference";
+                payload.image_urls = imageList;
+            } else {
+                payload.generation_type = "frame";
+                payload.image_with_roles = [
+                    { url: imageList[0], role: "first_frame" },
+                    { url: imageList[1], role: "last_frame" },
+                ];
+            }
+        } else if (imageList.length > 2) {
+            payload.generation_type = "reference";
+            payload.image_urls = imageList;
+        }
+    } else {
+        const firstImage = imageList[0];
+        const metadata: Record<string, unknown> = {
+            resolution: formatAutoDLResolution(config.vquality, config.size, model),
+        };
+        audioList.forEach((audioUrl, index) => {
+            metadata[`ref_audio_${index}`] = audioUrl;
+        });
+
+        payload = {
+            model: modelOptionName(model),
+            prompt,
+            image: firstImage,
+            duration,
+            metadata,
+        };
+        if (audioList[0]) {
+            payload.audio = audioList[0];
+            payload.audio_url = audioList[0];
+        }
+        if (imageList.length > 1) {
+            payload.images = imageList;
+        }
     }
 
     try {

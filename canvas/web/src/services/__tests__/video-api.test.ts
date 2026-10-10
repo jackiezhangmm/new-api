@@ -116,9 +116,9 @@ test("createVideoGenerationTask Wan3.0 协议分流、拓扑推导与顶级载�
         },
     } as unknown as Window & typeof globalThis;
 
-    let calledBody: Record<string, any> = {};
+    let calledBody: Record<string, unknown> = {};
     axios.post = (async (_url: string, body: unknown) => {
-        calledBody = (body as Record<string, any>) || {};
+        calledBody = (body as Record<string, unknown>) || {};
         return { data: { id: "wan-task-001" } };
     }) as typeof axios.post;
 
@@ -162,7 +162,7 @@ test("createVideoGenerationTask Wan3.0 协议分流、拓扑推导与顶级载�
         assert.equal(calledBody?.prompt, "");
         assert.equal(calledBody?.generation_type, "frame");
         assert.deepEqual(calledBody?.image_with_roles, [{ url: "https://example.com/1.png", role: "first_frame" }]);
-        assert.deepEqual(calledBody?.image_urls, ["https://example.com/1.png"]);
+        assert.equal(calledBody?.image_urls, undefined);
 
         // 2.1 单图附带音频自动推导为参考图模式
         await createVideoGenerationTask(
@@ -214,7 +214,6 @@ test("createVideoGenerationTask Wan3.0 协议分流、拓扑推导与顶级载�
         assert.equal(calledBody.generation_type, "reference");
         assert.deepEqual(calledBody.image_urls, ["https://example.com/1.png", "https://example.com/2.png", "https://example.com/3.png"]);
         assert.deepEqual(calledBody.audio_urls, ["https://example.com/sound.mp3"]);
-        assert.equal(calledBody.audio_url, "https://example.com/sound.mp3");
         assert.equal(calledBody.audio, false);
     } finally {
         axios.post = postBefore;

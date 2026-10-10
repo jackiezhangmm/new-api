@@ -80,6 +80,11 @@ test("Wan3.0 视频模型注册、协议规格与最近邻纠偏", () => {
     const res3 = switchVideoModel({ seconds: "1", vquality: "720", size: "16:9" }, "wan3.0-video");
     assert.equal(res3.settings.seconds, "2");
     assert.deepEqual(res3.adjusted, ["seconds"]);
+
+    // 纠偏：纯文本模式（imageCount === 0）下选中的 adaptive 自动回退为 16:9
+    const res4 = switchVideoModel({ seconds: "5", vquality: "720", size: "adaptive", imageCount: 0 }, "wan3.0-video");
+    assert.equal(res4.settings.size, "16:9");
+    assert.ok(res4.adjusted.includes("size"));
 });
 
 test("Wan3.0 视频参数前置校验：文生视频、自适应比例与多模态互斥守卫", () => {

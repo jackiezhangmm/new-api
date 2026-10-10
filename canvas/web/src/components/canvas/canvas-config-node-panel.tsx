@@ -38,6 +38,9 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
     const issues = isText ? auxiliaryTextIssues(effectiveConfig.models, DEFAULT_AUXILIARY_TEXT_MODEL) : isVideo ? videoSettingsIssues(config, config.models, { imageCount: inputSummary.imageCount, audioCount: inputSummary.audioCount, videoCount: inputSummary.videoCount }) : imageSettingsIssues(config, config.models);
     const hasPrompt = Boolean((node.metadata?.composerContent ?? node.metadata?.prompt ?? "").trim()) || inputSummary.textCount > 0;
 
+    const isPromptRequired = !(isVideo && inputSummary.imageCount > 0);
+    const canSubmit = isRunning || (!issues.length && (!isPromptRequired || hasPrompt));
+
     if (!canvasCapabilities.generation) return null;
 
     const modeOptions = [
@@ -156,7 +159,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                 type="primary"
                 className="mt-auto !h-9 !w-full !cursor-pointer !rounded-lg"
                 danger={isRunning}
-                disabled={!isRunning && ((!(isVideo && inputSummary.imageCount > 0) && !hasPrompt) || issues.length > 0)}
+                disabled={!canSubmit}
                 onMouseDown={(event) => event.stopPropagation()}
                 onClick={() => (isRunning ? onStop(node.id) : onGenerate(node.id))}
             >

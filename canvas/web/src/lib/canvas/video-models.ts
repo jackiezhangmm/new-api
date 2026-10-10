@@ -94,7 +94,7 @@ export type VideoSettings = {
     size: string;
 };
 
-export function switchVideoModel(current: { seconds?: string; vquality?: string; size?: string }, model: string) {
+export function switchVideoModel(current: { seconds?: string; vquality?: string; size?: string; imageCount?: number }, model: string) {
     const def = getCanvasVideoModel(model);
     if (!def) return { settings: { ...current, model }, adjusted: [] as string[] };
     const settings = {
@@ -127,6 +127,9 @@ export function switchVideoModel(current: { seconds?: string; vquality?: string;
     if (!availableSizes.includes(settings.size)) {
         settings.size = availableSizes[0] || "16:9";
         adjusted.push("size");
+    } else if (current.imageCount === 0 && settings.size === "adaptive") {
+        settings.size = "16:9";
+        adjusted.push("size");
     }
     const minDuration = def.protocol === "standard" ? 2 : 1;
     const seconds = Number(settings.seconds);
@@ -144,7 +147,7 @@ export const defaultVideoSettings = {
     size: "16:9",
 };
 
-export function videoConfigPatch(key: string, value: string) {
+export function videoConfigPatch(key: keyof AiConfig | string, value: string) {
     if (key === "videoSeconds") return { seconds: value };
     if (key === "vquality") return { vquality: value };
     if (key === "size") return { size: value };

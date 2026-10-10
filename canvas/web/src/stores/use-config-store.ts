@@ -204,9 +204,6 @@ export function resolveModelForCapability(config: AiConfig, currentModel: string
         if (currentModel && availableVideo.includes(currentModel)) return currentModel;
         if (defaultModel && availableVideo.includes(defaultModel)) return defaultModel;
         if (availableVideo.length > 0) return availableVideo[0];
-        if (currentModel && modelMatchesCapability(config, currentModel, capability)) return currentModel;
-        if (defaultModel && modelMatchesCapability(config, defaultModel, capability)) return defaultModel;
-        return fallbackModel;
     }
     if (currentModel && modelMatchesCapability(config, currentModel, capability)) return currentModel;
     if (defaultModel && modelMatchesCapability(config, defaultModel, capability)) return defaultModel;

@@ -202,7 +202,6 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
 
         if (audioList.length > 0) {
             payload.audio_urls = audioList;
-            payload.audio_url = audioList[0];
             payload.audio = false;
         } else {
             payload.audio = boolConfig(config.videoGenerateAudio, true);
@@ -215,7 +214,6 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
             } else {
                 payload.generation_type = "frame";
                 payload.image_with_roles = [{ url: imageList[0], role: "first_frame" }];
-                payload.image_urls = [imageList[0]];
             }
         } else if (imageList.length === 2) {
             if (config.videoMode === "reference") {

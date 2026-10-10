@@ -4,6 +4,7 @@ import {
     defaultVideoSettings,
     getCanvasVideoModel,
     switchVideoModel,
+    videoSettingsIssues,
 } from "../video-models";
 import {
     defaultConfig,
@@ -82,7 +83,6 @@ test("Wan3.0 视频模型注册、协议规格与最近邻纠偏", () => {
 });
 
 test("Wan3.0 视频参数前置校验：文生视频、自适应比例与多模态互斥守卫", () => {
-    const { videoSettingsIssues } = require("../video-models");
     const baseWanConfig: AiConfig = {
         ...defaultConfig,
         model: "wan3.0-video",
@@ -103,21 +103,22 @@ test("Wan3.0 视频参数前置校验：文生视频、自适应比例与多模�
     const issuesAdaptiveNoImage = videoSettingsIssues({ ...baseWanConfig, size: "adaptive" }, ["wan3.0-video"], { imageCount: 0, prompt: "sunset" });
     assert.ok(issuesAdaptiveNoImage.some((msg: string) => msg.includes("自适应") || msg.includes("Adaptive") || msg.includes("adaptive")));
 
-    // 2. 首尾帧互斥拦截：1 张或 2 张图片（默认首尾帧）连入音频时前置报错拦截
+    // 2. 单张图片连入音频自动生效为参考图模式，不产生冲突
     const issuesSingleImageWithAudio = videoSettingsIssues(baseWanConfig, ["wan3.0-video"], { imageCount: 1, audioCount: 1, prompt: "test" });
-    assert.ok(issuesSingleImageWithAudio.some((msg: string) => msg.includes("互斥") || msg.includes("首尾帧") || msg.includes("音频")));
+    assert.deepEqual(issuesSingleImageWithAudio, []);
 
+    // 3. 双张图片默认首尾帧模式，连入音频时前置报错拦截互斥
     const issuesDoubleImageWithAudio = videoSettingsIssues(baseWanConfig, ["wan3.0-video"], { imageCount: 2, audioCount: 1, prompt: "test" });
     assert.ok(issuesDoubleImageWithAudio.some((msg: string) => msg.includes("互斥") || msg.includes("首尾帧") || msg.includes("音频")));
 
-    // 3. 切换为参考图模式后，双图或多图允许连接音频
+    // 4. 双图在切换为参考图模式后允许连接音频
     const issuesRefModeWithAudio = videoSettingsIssues({ ...baseWanConfig, videoMode: "reference" }, ["wan3.0-video"], { imageCount: 2, audioCount: 1, prompt: "test" });
     assert.deepEqual(issuesRefModeWithAudio, []);
 
     const issuesMultiImageWithAudio = videoSettingsIssues(baseWanConfig, ["wan3.0-video"], { imageCount: 3, audioCount: 1, prompt: "test" });
     assert.deepEqual(issuesMultiImageWithAudio, []);
 
-    // 4. 图片上限保护（最多 10 张）
+    // 5. 图片上限保护（最多 10 张）
     const issuesTooManyImages = videoSettingsIssues(baseWanConfig, ["wan3.0-video"], { imageCount: 11, prompt: "test" });
     assert.ok(issuesTooManyImages.some((msg: string) => msg.includes("10")));
 });

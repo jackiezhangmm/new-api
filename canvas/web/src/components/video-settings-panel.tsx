@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { Slider, Switch } from "antd";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -65,6 +65,12 @@ export function VideoSettingsPanel({
     const resolutions = def ? Object.keys(def.resolutions).map((value) => ({ value, label: `${value}p` })) : resolutionOptions;
     const resolutionForRatios = def && def.resolutions[config.vquality] ? config.vquality : def ? Object.keys(def.resolutions)[0] : "";
     const ratios = def ? videoRatioOptions.filter((item) => Boolean(def.resolutions[resolutionForRatios]?.[item.value])) : videoRatioOptions;
+
+    useEffect(() => {
+        if (imageCount === 0 && config.size === "adaptive") {
+            onConfigChange("size", "16:9");
+        }
+    }, [imageCount, config.size, onConfigChange]);
 
     return (
         <ImageSettingsTheme theme={theme}>

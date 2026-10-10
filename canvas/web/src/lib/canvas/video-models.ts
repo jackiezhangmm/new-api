@@ -16,27 +16,26 @@ export type CanvasVideoModelDefinition = {
     maxAudio: number;
 };
 
+const wan3Resolutions = {
+    "480": { "16:9": "480P", "9:16": "480P", "1:1": "480P", "4:3": "480P", "3:4": "480P", "adaptive": "480P" },
+    "720": { "16:9": "720P", "9:16": "720P", "1:1": "720P", "4:3": "720P", "3:4": "720P", "adaptive": "720P" },
+    "1080": { "16:9": "1080P", "9:16": "1080P", "1:1": "1080P", "4:3": "1080P", "3:4": "1080P", "adaptive": "1080P" },
+};
+
+const createWan3Model = (model: string): CanvasVideoModelDefinition => ({
+    model,
+    protocol: "standard",
+    maxDuration: 30,
+    maxPrompt: 20000,
+    maxImages: 10,
+    minAudio: 0,
+    maxAudio: 5,
+    resolutions: wan3Resolutions,
+});
+
 export const canvasVideoModels: CanvasVideoModelDefinition[] = [
-    {
-        model: "wan3.0-video",
-        protocol: "standard",
-        maxDuration: 30, maxPrompt: 20000, maxImages: 10, minAudio: 0, maxAudio: 5,
-        resolutions: {
-            "480": { "16:9": "480P", "9:16": "480P", "1:1": "480P", "4:3": "480P", "3:4": "480P", "adaptive": "480P" },
-            "720": { "16:9": "720P", "9:16": "720P", "1:1": "720P", "4:3": "720P", "3:4": "720P", "adaptive": "720P" },
-            "1080": { "16:9": "1080P", "9:16": "1080P", "1:1": "1080P", "4:3": "1080P", "3:4": "1080P", "adaptive": "1080P" },
-        },
-    },
-    {
-        model: "wan3.0-video-prime",
-        protocol: "standard",
-        maxDuration: 30, maxPrompt: 20000, maxImages: 10, minAudio: 0, maxAudio: 5,
-        resolutions: {
-            "480": { "16:9": "480P", "9:16": "480P", "1:1": "480P", "4:3": "480P", "3:4": "480P", "adaptive": "480P" },
-            "720": { "16:9": "720P", "9:16": "720P", "1:1": "720P", "4:3": "720P", "3:4": "720P", "adaptive": "720P" },
-            "1080": { "16:9": "1080P", "9:16": "1080P", "1:1": "1080P", "4:3": "1080P", "3:4": "1080P", "adaptive": "1080P" },
-        },
-    },
+    createWan3Model("wan3.0-video"),
+    createWan3Model("wan3.0-video-prime"),
     {
         model: DEFAULT_CANVAS_VIDEO_MODEL,
         protocol: "autodl",
@@ -183,8 +182,8 @@ export function videoSettingsIssues(config: AiConfig, available: readonly string
             if (config.size === "adaptive") {
                 issues.push(i18n.t("integration.videoAdaptiveRequiresImage"));
             }
-        } else if (imageCount === 1 || (imageCount === 2 && config.videoMode !== "reference")) {
-            // 首尾帧过渡模式与音频互斥
+        } else if (imageCount === 2 && config.videoMode !== "reference") {
+            // 双图首尾帧过渡模式与音频互斥
             if (audioCount > 0) {
                 issues.push(i18n.t("integration.videoFrameAudioConflict"));
             }

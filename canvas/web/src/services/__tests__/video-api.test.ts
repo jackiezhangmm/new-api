@@ -116,9 +116,9 @@ test("createVideoGenerationTask Wan3.0 协议分流、拓扑推导与顶级载�
         },
     } as unknown as Window & typeof globalThis;
 
-    let calledBody: any = null;
-    axios.post = (async (_url: string, body: any) => {
-        calledBody = body;
+    let calledBody: Record<string, any> = {};
+    axios.post = (async (_url: string, body: unknown) => {
+        calledBody = (body as Record<string, any>) || {};
         return { data: { id: "wan-task-001" } };
     }) as typeof axios.post;
 
@@ -159,18 +159,30 @@ test("createVideoGenerationTask Wan3.0 协议分流、拓扑推导与顶级载�
         await createVideoGenerationTask(wanConfig, "", [
             { id: "img-1", name: "1.png", type: "image/png", dataUrl: "https://example.com/1.png" },
         ]);
-        assert.equal(calledBody.prompt, "");
-        assert.equal(calledBody.generation_type, "frame");
-        assert.deepEqual(calledBody.image_with_roles, [{ url: "https://example.com/1.png", role: "first_frame" }]);
-        assert.deepEqual(calledBody.image_urls, ["https://example.com/1.png"]);
+        assert.equal(calledBody?.prompt, "");
+        assert.equal(calledBody?.generation_type, "frame");
+        assert.deepEqual(calledBody?.image_with_roles, [{ url: "https://example.com/1.png", role: "first_frame" }]);
+        assert.deepEqual(calledBody?.image_urls, ["https://example.com/1.png"]);
+
+        // 2.1 单图附带音频自动推导为参考图模式
+        await createVideoGenerationTask(
+            wanConfig,
+            "animate with bgm",
+            [{ id: "img-1", name: "1.png", type: "image/png", dataUrl: "https://example.com/1.png" }],
+            { audios: [{ id: "aud-1", name: "sound.mp3", type: "audio/mpeg", url: "https://example.com/sound.mp3" }] },
+        );
+        assert.equal(calledBody?.generation_type, "reference");
+        assert.deepEqual(calledBody?.image_urls, ["https://example.com/1.png"]);
+        assert.deepEqual(calledBody?.audio_urls, ["https://example.com/sound.mp3"]);
+        assert.equal(calledBody?.audio, false);
 
         // 3. 双图默认推导为首尾帧模式
         await createVideoGenerationTask(wanConfig, "smooth transition", [
             { id: "img-1", name: "1.png", type: "image/png", dataUrl: "https://example.com/1.png" },
             { id: "img-2", name: "2.png", type: "image/png", dataUrl: "https://example.com/2.png" },
         ]);
-        assert.equal(calledBody.generation_type, "frame");
-        assert.deepEqual(calledBody.image_with_roles, [
+        assert.equal(calledBody?.generation_type, "frame");
+        assert.deepEqual(calledBody?.image_with_roles, [
             { url: "https://example.com/1.png", role: "first_frame" },
             { url: "https://example.com/2.png", role: "last_frame" },
         ]);

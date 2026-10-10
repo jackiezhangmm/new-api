@@ -8,6 +8,11 @@ import { getGroupResourceNodes } from "@/lib/canvas/canvas-resource-references";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
+const isImageNode = (node: CanvasNodeData) => {
+    const resource = getNodeDefinition(node.type)?.resource?.(node);
+    return resource?.kind === "image" || node.type === CanvasNodeType.Image;
+};
+
 export function CanvasNodeReferenceBar({
     nodeId,
     nodes,
@@ -35,11 +40,6 @@ export function CanvasNodeReferenceBar({
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const references = connectedNodes.flatMap((sourceNode) => (sourceNode.type === CanvasNodeType.Group ? getGroupResourceNodes(sourceNode.id, nodes) : [sourceNode]).map((node) => ({ node, sourceNodeId: sourceNode.id })));
     if (!references.length && !onStartSelection) return null;
-
-    const isImageNode = (node: CanvasNodeData) => {
-        const resource = getNodeDefinition(node.type)?.resource?.(node);
-        return resource?.kind === "image" || node.type === CanvasNodeType.Image;
-    };
 
     const imageIndices: number[] = [];
     references.forEach((ref, index) => {

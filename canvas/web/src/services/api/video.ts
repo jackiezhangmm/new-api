@@ -185,8 +185,8 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
 
     if (def.protocol === "standard") {
         const resolution = `${config.vquality.toUpperCase().replace(/P$/, "")}P`;
-        const size = config.size || "16:9";
-        const negativePrompt = (config.negativePrompt || (config as any).videoNegativePrompt || "").trim();
+        const size = imageList.length === 0 && config.size === "adaptive" ? "16:9" : config.size || "16:9";
+        const negativePrompt = (config.negativePrompt || "").trim();
 
         payload = {
             model: modelOptionName(model),
@@ -209,9 +209,14 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
         }
 
         if (imageList.length === 1) {
-            payload.generation_type = "frame";
-            payload.image_with_roles = [{ url: imageList[0], role: "first_frame" }];
-            payload.image_urls = [imageList[0]];
+            if (audioList.length > 0) {
+                payload.generation_type = "reference";
+                payload.image_urls = [imageList[0]];
+            } else {
+                payload.generation_type = "frame";
+                payload.image_with_roles = [{ url: imageList[0], role: "first_frame" }];
+                payload.image_urls = [imageList[0]];
+            }
         } else if (imageList.length === 2) {
             if (config.videoMode === "reference") {
                 payload.generation_type = "reference";

@@ -117,7 +117,7 @@ export function CanvasNodePromptPanel({
                 videoMode={node.metadata?.videoMode}
                 isFrameSwap={Boolean(node.metadata?.videoFrameSwap)}
                 onToggleFrameSwap={() => onConfigChange(node.id, { videoFrameSwap: !node.metadata?.videoFrameSwap })}
-                onToggleVideoMode={() => onConfigChange(node.id, { videoMode: node.metadata?.videoMode === "reference" ? "frame" : "reference" })}
+                onToggleVideoMode={() => onConfigChange(node.id, { videoMode: node.metadata?.videoMode === "reference" ? "frames" : "reference" })}
             />
             <CanvasPromptChipInput
                 value={prompt}

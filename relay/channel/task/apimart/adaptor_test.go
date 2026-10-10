@@ -911,3 +911,29 @@ func TestDoResponse(t *testing.T) {
 		assert.Contains(t, taskErr.Message, "请求参数无效")
 	})
 }
+
+func TestFetchTask(t *testing.T) {
+	adaptor := &TaskAdaptor{}
+	var requestedPath string
+	var authHeader string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPath = r.URL.Path
+		authHeader = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"code":200,"data":{"task_id":"task_01M4J2YCZ5RFZR3R69JNK7E8BH","status":"processing","progress":50}}`))
+	}))
+	defer server.Close()
+
+	resp, err := adaptor.FetchTask(server.URL, "test-api-key", map[string]any{
+		"task_id": "task_01M4J2YCZ5RFZR3R69JNK7E8BH",
+	}, "")
+
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, "/v1/tasks/task_01M4J2YCZ5RFZR3R69JNK7E8BH", requestedPath)
+	assert.Equal(t, "Bearer test-api-key", authHeader)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}

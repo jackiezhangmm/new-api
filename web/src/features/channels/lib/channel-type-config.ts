@@ -141,7 +141,7 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
     defaultBaseUrl: 'https://api.apimart.ai',
     hints: {
       key: 'APIMart API Key',
-      models: 'gpt-image-2-official',
+      models: 'gpt-image-2-official,wan3.0-video,wan3.0-video-prime',
       baseUrl: 'Default: https://api.apimart.ai',
     },
   },

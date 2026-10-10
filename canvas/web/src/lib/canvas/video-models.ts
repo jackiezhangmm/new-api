@@ -9,6 +9,7 @@ export type CanvasVideoModelDefinition = {
     model: string;
     protocol?: CanvasVideoProtocol;
     resolutions: Record<string, Record<string, string>>;
+    minDuration?: number;
     maxDuration: number;
     maxPrompt: number;
     maxImages: number;
@@ -25,6 +26,7 @@ const wan3Resolutions = {
 const createWan3Model = (model: string): CanvasVideoModelDefinition => ({
     model,
     protocol: "standard",
+    minDuration: 2,
     maxDuration: 30,
     maxPrompt: 20000,
     maxImages: 10,
@@ -131,7 +133,7 @@ export function switchVideoModel(current: { seconds?: string; vquality?: string;
         settings.size = "16:9";
         adjusted.push("size");
     }
-    const minDuration = def.protocol === "standard" ? 2 : 1;
+    const minDuration = def.minDuration ?? (def.protocol === "standard" ? 2 : 1);
     const seconds = Number(settings.seconds);
     if (!Number.isInteger(seconds) || seconds < minDuration || seconds > def.maxDuration) {
         settings.seconds = String(Math.min(def.maxDuration, Math.max(minDuration, seconds || 5)));
@@ -205,7 +207,7 @@ export function videoSettingsIssues(config: AiConfig, available: readonly string
     }
     if (videoCount > 0) issues.push(i18n.t("integration.videoReferencesUnsupported"));
 
-    const minDuration = def.protocol === "standard" ? 2 : 1;
+    const minDuration = def.minDuration ?? (def.protocol === "standard" ? 2 : 1);
     const seconds = Number(config.videoSeconds);
     if (!Number.isInteger(seconds) || seconds < minDuration || seconds > def.maxDuration) {
         issues.push(i18n.t("integration.invalidSettings", { fields: i18n.t("settingsPanels.video.seconds") }));

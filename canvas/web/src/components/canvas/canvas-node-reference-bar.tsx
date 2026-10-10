@@ -13,6 +13,11 @@ const isImageNode = (node: CanvasNodeData) => {
     return resource?.kind === "image" || node.type === CanvasNodeType.Image;
 };
 
+const isAudioNode = (node: CanvasNodeData) => {
+    const resource = getNodeDefinition(node.type)?.resource?.(node);
+    return resource?.kind === "audio" || node.type === CanvasNodeType.Audio;
+};
+
 export function CanvasNodeReferenceBar({
     nodeId,
     nodes,
@@ -49,7 +54,8 @@ export function CanvasNodeReferenceBar({
     });
 
     const isDoubleImageFrameMode = isVideo && imageIndices.length === 2 && videoMode !== "reference";
-    const isSingleImageFrameMode = isVideo && imageIndices.length === 1;
+    const hasAudio = references.some((ref) => isAudioNode(ref.node));
+    const isSingleImageFrameMode = isVideo && imageIndices.length === 1 && !hasAudio;
 
     const badges: Record<number, string> = {};
     if (isDoubleImageFrameMode) {

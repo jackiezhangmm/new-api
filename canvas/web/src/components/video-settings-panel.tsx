@@ -56,7 +56,7 @@ export function VideoSettingsPanel({
     const { t } = useTranslation();
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const def = getCanvasVideoModel(config.model || config.videoModel);
-    const minSeconds = def?.protocol === "standard" ? 2 : 1;
+    const minSeconds = def?.minDuration ?? (def?.protocol === "standard" ? 2 : 1);
     const maxSeconds = def?.maxDuration || 15;
     const seconds = Number(config.videoSeconds) || 5;
     const resolution = config.vquality;
@@ -160,7 +160,7 @@ export function VideoSettingsPanel({
                             {imageCount === 2 ? (
                                 <SettingGroup title={t("settingsPanels.video.mode")} color={theme.node.muted}>
                                     <div className="grid grid-cols-2 gap-2">
-                                        <OptionPill selected={config.videoMode !== "reference"} theme={theme} onClick={() => onConfigChange("videoMode", "frames")}>
+                                        <OptionPill selected={config.videoMode !== "reference"} theme={theme} onClick={() => onConfigChange("videoMode", "frame")}>
                                             {t("settingsPanels.video.modes.frames")}
                                         </OptionPill>
                                         <OptionPill selected={config.videoMode === "reference"} theme={theme} onClick={() => onConfigChange("videoMode", "reference")}>

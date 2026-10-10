@@ -3121,7 +3121,7 @@ function InfiniteCanvasPage() {
                     videoMode={panelNode.metadata?.videoMode}
                     isFrameSwap={Boolean(panelNode.metadata?.videoFrameSwap)}
                     onToggleFrameSwap={() => handleConfigNodeChange(panelNode.id, { videoFrameSwap: !panelNode.metadata?.videoFrameSwap })}
-                    onToggleVideoMode={() => handleConfigNodeChange(panelNode.id, { videoMode: panelNode.metadata?.videoMode === "reference" ? "frames" : "reference" })}
+                    onToggleVideoMode={() => handleConfigNodeChange(panelNode.id, { videoMode: panelNode.metadata?.videoMode === "reference" ? "frame" : "reference" })}
                     onChange={(composerContent) => handleConfigNodeChange(panelNode.id, { composerContent })}
                     onClose={() => setDialogNodeId(null)}
                     onDisconnectReference={disconnectNodeReference}

@@ -455,9 +455,7 @@ test('gallery renders multi-state cards: pure text, prompt with reference image,
     is_favorite: true,
     created_at: 11,
     updated_at: 11,
-    tags: [
-      { id: 2, user_id: 1, name: '参考', created_at: 11, updated_at: 11 },
-    ],
+    tags: [{ id: 2, user_id: 1, name: '参考', created_at: 11, updated_at: 11 }],
   }
   const pureImage = {
     id: 12,
@@ -476,9 +474,7 @@ test('gallery renders multi-state cards: pure text, prompt with reference image,
     is_favorite: false,
     created_at: 12,
     updated_at: 12,
-    tags: [
-      { id: 3, user_id: 1, name: '插画', created_at: 12, updated_at: 12 },
-    ],
+    tags: [{ id: 3, user_id: 1, name: '插画', created_at: 12, updated_at: 12 }],
   }
 
   client.get = async (url) => {
@@ -534,8 +530,8 @@ test('gallery renders multi-state cards: pure text, prompt with reference image,
   assert.match(document.body.textContent ?? '', /Go draw/)
   assert.match(document.body.textContent ?? '', /Copy prompt/)
 
-  const refImgButton = [...document.body.querySelectorAll('button')].find(
-    (b) => b.querySelector('img[src="https://example.com/ref.png"]')
+  const refImgButton = [...document.body.querySelectorAll('button')].find((b) =>
+    b.querySelector('img[src="https://example.com/ref.png"]')
   )
   assert.ok(refImgButton instanceof HTMLButtonElement)
   await act(async () => refImgButton.click())

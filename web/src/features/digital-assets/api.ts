@@ -112,9 +112,7 @@ export async function deleteDigitalAsset(id: number): Promise<void> {
   unwrap(response.data)
 }
 
-export async function uploadAssetImage(
-  file: File
-): Promise<DigitalAssetImage> {
+export async function uploadAssetImage(file: File): Promise<DigitalAssetImage> {
   const formData = new FormData()
   formData.append('file', file)
   const response = await api.post<ApiResponse<DigitalAssetImage>>(

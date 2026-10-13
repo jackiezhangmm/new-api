@@ -101,8 +101,7 @@ export function AssetFormDialog(props: AssetFormDialogProps) {
           ? ''
           : (props.asset?.content ?? props.initialPrompt?.content ?? ''),
       tags: props.asset?.tags.map((tag) => tag.name) ?? [],
-      image_id:
-        props.asset?.image_id ?? props.asset?.image?.id ?? undefined,
+      image_id: props.asset?.image_id ?? props.asset?.image?.id ?? undefined,
     })
     setTagInput('')
     setUploading(false)
@@ -337,14 +336,14 @@ export function AssetFormDialog(props: AssetFormDialogProps) {
               <FormItem>
                 <FormLabel>{t('Reference image (optional)')}</FormLabel>
                 {previewImage ? (
-                  <div className='flex items-center justify-between gap-3 rounded-md border p-2 bg-muted/20'>
-                    <div className='flex items-center gap-3 min-w-0'>
+                  <div className='bg-muted/20 flex items-center justify-between gap-3 rounded-md border p-2'>
+                    <div className='flex min-w-0 items-center gap-3'>
                       <img
                         src={previewImage.url}
                         alt={t('Reference image')}
-                        className='size-14 rounded object-cover border shrink-0'
+                        className='size-14 shrink-0 rounded border object-cover'
                       />
-                      <div className='text-xs text-muted-foreground truncate'>
+                      <div className='text-muted-foreground truncate text-xs'>
                         {previewImage.width > 0 && previewImage.height > 0 ? (
                           <span>
                             {previewImage.width} × {previewImage.height}
@@ -382,7 +381,7 @@ export function AssetFormDialog(props: AssetFormDialogProps) {
                       )}
                       {t('Upload reference image')}
                     </Button>
-                    <span className='text-xs text-muted-foreground'>
+                    <span className='text-muted-foreground text-xs'>
                       {t('JPEG, PNG, WebP up to 10MB')}
                     </span>
                   </div>
@@ -394,14 +393,14 @@ export function AssetFormDialog(props: AssetFormDialogProps) {
               <FormLabel>{t('Image')}</FormLabel>
               {previewImage ? (
                 <div className='space-y-2'>
-                  <div className='relative flex max-h-52 items-center justify-center overflow-hidden rounded-md border bg-muted/20 p-2'>
+                  <div className='bg-muted/20 relative flex max-h-52 items-center justify-center overflow-hidden rounded-md border p-2'>
                     <img
                       src={previewImage.url}
                       alt={t('Image asset')}
                       className='max-h-48 max-w-full rounded object-contain'
                     />
                   </div>
-                  <div className='flex items-center justify-between text-xs text-muted-foreground'>
+                  <div className='text-muted-foreground flex items-center justify-between text-xs'>
                     <span>
                       {previewImage.width > 0 && previewImage.height > 0
                         ? `${previewImage.width} × ${previewImage.height}`
@@ -439,24 +438,22 @@ export function AssetFormDialog(props: AssetFormDialogProps) {
                 <button
                   type='button'
                   disabled={uploading}
-                  className='flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 text-center transition-colors hover:bg-muted/40 cursor-pointer disabled:opacity-50'
+                  className='hover:bg-muted/40 flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 text-center transition-colors disabled:opacity-50'
                   onClick={() => fileInputRef.current?.click()}
                 >
                   {uploading ? (
                     <HugeiconsIcon
                       icon={Loading03Icon}
-                      className='size-8 animate-spin text-muted-foreground'
+                      className='text-muted-foreground size-8 animate-spin'
                     />
                   ) : (
-                    <ImageIcon className='size-8 text-muted-foreground' />
+                    <ImageIcon className='text-muted-foreground size-8' />
                   )}
                   <div className='space-y-1'>
                     <p className='text-sm font-medium'>
-                      {uploading
-                        ? t('Loading')
-                        : t('Click to upload image')}
+                      {uploading ? t('Loading') : t('Click to upload image')}
                     </p>
-                    <p className='text-xs text-muted-foreground'>
+                    <p className='text-muted-foreground text-xs'>
                       {t('JPEG, PNG, WebP up to 10MB')}
                     </p>
                   </div>

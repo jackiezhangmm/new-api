@@ -152,10 +152,10 @@ export function AssetDetailDialog(props: AssetDetailDialogProps) {
               </div>
             ) : null
           ) : props.asset.image?.url ? (
-            <div className='relative overflow-hidden rounded-md border bg-muted/20'>
+            <div className='bg-muted/20 relative overflow-hidden rounded-md border'>
               <button
                 type='button'
-                className='relative aspect-video w-full cursor-pointer overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-ring flex items-center justify-center'
+                className='focus-visible:ring-ring relative flex aspect-video w-full cursor-pointer items-center justify-center overflow-hidden focus:outline-none focus-visible:ring-2'
                 onClick={() => setEnlargedPreview(true)}
               >
                 <img
@@ -163,7 +163,7 @@ export function AssetDetailDialog(props: AssetDetailDialogProps) {
                   alt={props.asset.title}
                   className='size-full object-contain'
                 />
-                <Badge className='border-0 bg-black/60 text-white backdrop-blur-sm absolute top-2 left-2'>
+                <Badge className='absolute top-2 left-2 border-0 bg-black/60 text-white backdrop-blur-sm'>
                   {t('Reference image')}
                 </Badge>
               </button>

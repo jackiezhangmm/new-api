@@ -58,7 +58,11 @@ import { AssetFormDialog } from './components/asset-form-dialog'
 import { AssetPagination } from './components/asset-pagination'
 import { TagManagerDialog } from './components/tag-manager-dialog'
 import type { DigitalAssetFormValues } from './lib/form'
-import type { DigitalAsset, DigitalAssetPayload, DigitalAssetTag } from './types'
+import type {
+  DigitalAsset,
+  DigitalAssetPayload,
+  DigitalAssetTag,
+} from './types'
 
 const FAVORITES_PAGE_SIZE = 6
 const ALL_ASSETS_PAGE_SIZE = 12

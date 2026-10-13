@@ -53,13 +53,11 @@ test('等待认证头期间换账号时拒绝晚到凭据', async () => {
   useAuthStore.getState().auth.setBundle(bundle)
   const host = createCanvasHost()
   const pending = host.getAuthHeaders()
-  useAuthStore
-    .getState()
-    .auth.setBundle({
-      ...bundle,
-      user: { ...bundle.user, id: 43 },
-      session: { ...bundle.session, sid: 'session-b' },
-    })
+  useAuthStore.getState().auth.setBundle({
+    ...bundle,
+    user: { ...bundle.user, id: 43 },
+    session: { ...bundle.session, sid: 'session-b' },
+  })
   await expect(pending).rejects.toThrow()
 })
 
@@ -77,13 +75,11 @@ test('同一会话刷新 Token 后旧宿主读取最新 Token，不重新绑定�
 test('换账号后旧宿主不能取得新账号凭据', async () => {
   useAuthStore.getState().auth.setBundle(bundle)
   const host = createCanvasHost()
-  useAuthStore
-    .getState()
-    .auth.setBundle({
-      ...bundle,
-      user: { ...bundle.user, id: 43 },
-      session: { ...bundle.session, sid: 'session-b' },
-    })
+  useAuthStore.getState().auth.setBundle({
+    ...bundle,
+    user: { ...bundle.user, id: 43 },
+    session: { ...bundle.session, sid: 'session-b' },
+  })
   expect(host.getUser()).toBeNull()
   await expect(host.getAuthHeaders()).rejects.toThrow()
 })

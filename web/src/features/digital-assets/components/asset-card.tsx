@@ -59,9 +59,7 @@ export function DigitalAssetCard(props: DigitalAssetCardProps) {
       <HugeiconsIcon
         icon={FavouriteIcon}
         className={
-          props.asset.is_favorite
-            ? 'fill-red-500 text-red-500'
-            : undefined
+          props.asset.is_favorite ? 'fill-red-500 text-red-500' : undefined
         }
       />
     </Button>
@@ -92,10 +90,10 @@ export function DigitalAssetCard(props: DigitalAssetCardProps) {
       <Card
         size='sm'
         style={{ aspectRatio }}
-        className='hover:shadow-md min-h-[180px] max-h-[380px] relative flex w-full flex-col justify-between overflow-hidden rounded-lg border !p-0 !py-0 !gap-0 p-0 py-0 gap-0 data-[size=sm]:p-0 data-[size=sm]:py-0 data-[size=sm]:gap-0 transition-shadow'
+        className='relative flex max-h-[380px] min-h-[180px] w-full flex-col justify-between !gap-0 gap-0 overflow-hidden rounded-lg border !p-0 p-0 !py-0 py-0 transition-shadow hover:shadow-md data-[size=sm]:gap-0 data-[size=sm]:p-0 data-[size=sm]:py-0'
       >
         {openTrigger}
-        <div className='pointer-events-none absolute inset-0 size-full bg-muted'>
+        <div className='bg-muted pointer-events-none absolute inset-0 size-full'>
           {imageUrl ? (
             <img
               src={imageUrl}
@@ -154,10 +152,10 @@ export function DigitalAssetCard(props: DigitalAssetCardProps) {
     return (
       <Card
         size='sm'
-        className='hover:bg-muted/30 relative flex flex-col overflow-hidden rounded-lg border !p-0 !py-0 !gap-0 p-0 py-0 gap-0 data-[size=sm]:p-0 data-[size=sm]:py-0 data-[size=sm]:gap-0 transition-colors'
+        className='hover:bg-muted/30 relative flex flex-col !gap-0 gap-0 overflow-hidden rounded-lg border !p-0 p-0 !py-0 py-0 transition-colors data-[size=sm]:gap-0 data-[size=sm]:p-0 data-[size=sm]:py-0'
       >
         {openTrigger}
-        <div className='pointer-events-none relative aspect-video w-full shrink-0 overflow-hidden bg-muted'>
+        <div className='bg-muted pointer-events-none relative aspect-video w-full shrink-0 overflow-hidden'>
           <img
             src={imageUrl}
             alt={props.asset.title}
@@ -202,7 +200,7 @@ export function DigitalAssetCard(props: DigitalAssetCardProps) {
   return (
     <Card
       size='sm'
-      className='hover:bg-muted/30 relative flex flex-col overflow-hidden rounded-lg border !p-3.5 !py-3.5 !gap-2.5 p-3.5 py-3.5 gap-2.5 data-[size=sm]:p-3.5 data-[size=sm]:py-3.5 data-[size=sm]:gap-2.5 transition-colors'
+      className='hover:bg-muted/30 relative flex flex-col !gap-2.5 gap-2.5 overflow-hidden rounded-lg border !p-3.5 p-3.5 !py-3.5 py-3.5 transition-colors data-[size=sm]:gap-2.5 data-[size=sm]:p-3.5 data-[size=sm]:py-3.5'
     >
       {openTrigger}
       <div className='pointer-events-none relative z-1 flex items-center justify-between'>

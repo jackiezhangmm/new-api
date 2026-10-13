@@ -875,6 +875,7 @@ type TaskSubmitReq struct {
 	Images         []string               `json:"images,omitempty"`
 	Size           string                 `json:"size,omitempty"`
 	Duration       int                    `json:"duration,omitempty"`
+	Seed           *int64                 `json:"seed,omitempty"`
 	Seconds        string                 `json:"seconds,omitempty"`
 	InputReference string                 `json:"input_reference,omitempty"`
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
@@ -959,6 +960,7 @@ type TaskInfo struct {
 	Progress         string `json:"progress,omitempty"`
 	CompletionTokens int    `json:"completion_tokens,omitempty"` // 用于按倍率计费
 	TotalTokens      int    `json:"total_tokens,omitempty"`      // 用于按倍率计费
+	Duration         int    `json:"duration,omitempty"`          // 实际生成时长（秒）
 }
 
 func FailTaskInfo(reason string) *TaskInfo {

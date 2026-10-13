@@ -1,0 +1,6 @@
+Source: https://github.com/jackiechangmm/infinite-canvas
+Commit: d213a74
+Version: v0.18.0
+Imported path: web/
+Imported at: 2026-02-01
+Scope: standalone frontend only; canvas-agent, canvas-proxy, docs and upstream deployment files are excluded.

@@ -52,27 +52,62 @@ func setupFeaturedPromptHTTPTest(t *testing.T) (*gin.Engine, *gorm.DB) {
 func TestFeaturedPromptHTTPListsPaginatedItemsInConfiguredOrder(t *testing.T) {
 	router, db := setupFeaturedPromptHTTPTest(t)
 	require.NoError(t, db.Create(&[]model.FeaturedPrompt{
-		{Title: "第二条", Prompt: "prompt-2", CoverURL: "https://assets.test/2.webp", CoverKey: "featured/2.webp", SortOrder: 2},
+		{Title: "第二条", Prompt: "Cyberpunk neon cat", CoverURL: "https://assets.test/2.webp", CoverKey: "featured/2.webp", SortOrder: 2},
 		{Title: "第一条", Prompt: "prompt-1", CoverURL: "https://assets.test/1.webp", CoverKey: "featured/1.webp", SortOrder: 1},
-		{Title: "第三条", Prompt: "prompt-3", CoverURL: "https://assets.test/3.webp", CoverKey: "featured/3.webp", SortOrder: 3},
+		{Title: "水墨山水", Prompt: "Chinese landscape painting", CoverURL: "https://assets.test/3.webp", CoverKey: "featured/3.webp", SortOrder: 3},
 		{Title: "第四条", Prompt: "prompt-4", CoverURL: "https://assets.test/4.webp", CoverKey: "featured/4.webp", SortOrder: 4},
 		{Title: "第五条", Prompt: "prompt-5", CoverURL: "https://assets.test/5.webp", CoverKey: "featured/5.webp", SortOrder: 5},
 		{Title: "第六条", Prompt: "prompt-6", CoverURL: "https://assets.test/6.webp", CoverKey: "featured/6.webp", SortOrder: 6},
 		{Title: "第七条", Prompt: "prompt-7", CoverURL: "https://assets.test/7.webp", CoverKey: "featured/7.webp", SortOrder: 7},
 	}).Error)
 
-	response := performFeaturedPromptJSON[featuredPromptTestPage](t, router, http.MethodGet, "/api/featured-prompts?p=1&page_size=1", "")
-	require.True(t, response.Success)
-	assert.Equal(t, 6, response.Data.PageSize)
-	assert.Equal(t, 7, response.Data.Total)
-	require.Len(t, response.Data.Items, 6)
-	assert.Equal(t, "第一条", response.Data.Items[0].Title)
-	assert.Equal(t, "https://assets.test/1.webp", response.Data.Items[0].CoverURL)
+	// 1. 未传 page_size 时默认单页 6 条
+	defaultPage := performFeaturedPromptJSON[featuredPromptTestPage](t, router, http.MethodGet, "/api/featured-prompts?p=1", "")
+	require.True(t, defaultPage.Success)
+	assert.Equal(t, 6, defaultPage.Data.PageSize)
+	assert.Equal(t, 7, defaultPage.Data.Total)
+	require.Len(t, defaultPage.Data.Items, 6)
+	assert.Equal(t, "第一条", defaultPage.Data.Items[0].Title)
+	assert.Equal(t, "https://assets.test/1.webp", defaultPage.Data.Items[0].CoverURL)
 
 	secondPage := performFeaturedPromptJSON[featuredPromptTestPage](t, router, http.MethodGet, "/api/featured-prompts?p=2", "")
 	require.True(t, secondPage.Success)
 	require.Len(t, secondPage.Data.Items, 1)
 	assert.Equal(t, "第七条", secondPage.Data.Items[0].Title)
+
+	// 2. 显式指定 page_size 生效
+	customPage := performFeaturedPromptJSON[featuredPromptTestPage](t, router, http.MethodGet, "/api/featured-prompts?p=1&page_size=3", "")
+	require.True(t, customPage.Success)
+	assert.Equal(t, 3, customPage.Data.PageSize)
+	assert.Equal(t, 7, customPage.Data.Total)
+	require.Len(t, customPage.Data.Items, 3)
+
+	// 3. keyword 模糊匹配标题
+	titleFilter := performFeaturedPromptJSON[featuredPromptTestPage](t, router, http.MethodGet, "/api/featured-prompts?keyword=山水", "")
+	require.True(t, titleFilter.Success)
+	assert.Equal(t, 1, titleFilter.Data.Total)
+	require.Len(t, titleFilter.Data.Items, 1)
+	assert.Equal(t, "水墨山水", titleFilter.Data.Items[0].Title)
+
+	// 4. keyword 模糊匹配提示词（大小写不敏感）
+	promptFilter := performFeaturedPromptJSON[featuredPromptTestPage](t, router, http.MethodGet, "/api/featured-prompts?keyword=cyberpunk", "")
+	require.True(t, promptFilter.Success)
+	assert.Equal(t, 1, promptFilter.Data.Total)
+	require.Len(t, promptFilter.Data.Items, 1)
+	assert.Equal(t, "第二条", promptFilter.Data.Items[0].Title)
+
+	// 5. q 别名生效
+	aliasFilter := performFeaturedPromptJSON[featuredPromptTestPage](t, router, http.MethodGet, "/api/featured-prompts?q=Chinese", "")
+	require.True(t, aliasFilter.Success)
+	assert.Equal(t, 1, aliasFilter.Data.Total)
+	require.Len(t, aliasFilter.Data.Items, 1)
+	assert.Equal(t, "水墨山水", aliasFilter.Data.Items[0].Title)
+
+	// 6. 无命中时返回空列表
+	emptyFilter := performFeaturedPromptJSON[featuredPromptTestPage](t, router, http.MethodGet, "/api/featured-prompts?keyword=notfound", "")
+	require.True(t, emptyFilter.Success)
+	assert.Equal(t, 0, emptyFilter.Data.Total)
+	assert.Empty(t, emptyFilter.Data.Items)
 }
 
 type featuredPromptTestStore struct {

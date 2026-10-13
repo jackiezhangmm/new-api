@@ -45,6 +45,9 @@ var buildFS embed.FS
 //go:embed web/dist/index.html
 var indexPage []byte
 
+//go:embed web/dist/canvas/index.html
+var canvasPage []byte
+
 func main() {
 	startTime := time.Now()
 	kitutil.SetLogging(common.SysLog, func(message string) {
@@ -196,8 +199,9 @@ func main() {
 
 	// 设置路由
 	router.SetRouter(server, router.WebAssets{
-		BuildFS:   buildFS,
-		IndexPage: indexPage,
+		BuildFS:    buildFS,
+		IndexPage:  indexPage,
+		CanvasPage: canvasPage,
 	})
 	var port = os.Getenv("PORT")
 	if port == "" {

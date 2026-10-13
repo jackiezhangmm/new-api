@@ -23,20 +23,20 @@ func TestFeaturedPromptObjectStoreUploadsAndDeletesThroughS3CompatibleEndpoint(t
 			require.NoError(t, err)
 			assert.Equal(t, []byte("image-data"), body)
 			assert.Equal(t, "image/webp", r.Header.Get("Content-Type"))
-			assert.Equal(t, featuredPromptCacheControl, r.Header.Get("Cache-Control"))
+			assert.Equal(t, "public, max-age=31536000, immutable", r.Header.Get("Cache-Control"))
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(server.Close)
 
-	t.Setenv("FEATURED_PROMPT_S3_ENDPOINT", server.URL)
-	t.Setenv("FEATURED_PROMPT_S3_PUBLIC_URL", "https://assets.example.test")
-	t.Setenv("FEATURED_PROMPT_S3_REGION", "test-region")
-	t.Setenv("FEATURED_PROMPT_S3_BUCKET", "test-bucket")
-	t.Setenv("FEATURED_PROMPT_S3_ACCESS_KEY", "test-access-key")
-	t.Setenv("FEATURED_PROMPT_S3_SECRET_KEY", "test-secret-key")
-	t.Setenv("FEATURED_PROMPT_S3_PATH_STYLE", "true")
-	t.Setenv("FEATURED_PROMPT_S3_PREFIX", "test")
+	t.Setenv("S3_ENDPOINT", server.URL)
+	t.Setenv("S3_PUBLIC_URL", "https://assets.example.test")
+	t.Setenv("S3_REGION", "test-region")
+	t.Setenv("S3_BUCKET", "test-bucket")
+	t.Setenv("S3_ACCESS_KEY", "test-access-key")
+	t.Setenv("S3_SECRET_KEY", "test-secret-key")
+	t.Setenv("S3_PATH_STYLE", "true")
+	t.Setenv("S3_PREFIX", "test")
 
 	store := NewFeaturedPromptObjectStoreFromEnv()
 	key, publicURL, err := store.Upload(context.Background(), []byte("image-data"), "image/webp")
@@ -51,12 +51,12 @@ func TestFeaturedPromptObjectStoreUploadsAndDeletesThroughS3CompatibleEndpoint(t
 
 func TestFeaturedPromptObjectStoreRejectsMissingConfiguration(t *testing.T) {
 	for _, key := range []string{
-		"FEATURED_PROMPT_S3_ENDPOINT",
-		"FEATURED_PROMPT_S3_PUBLIC_URL",
-		"FEATURED_PROMPT_S3_REGION",
-		"FEATURED_PROMPT_S3_BUCKET",
-		"FEATURED_PROMPT_S3_ACCESS_KEY",
-		"FEATURED_PROMPT_S3_SECRET_KEY",
+		"S3_ENDPOINT",
+		"S3_PUBLIC_URL",
+		"S3_REGION",
+		"S3_BUCKET",
+		"S3_ACCESS_KEY",
+		"S3_SECRET_KEY",
 	} {
 		t.Setenv(key, "")
 	}

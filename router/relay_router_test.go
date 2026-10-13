@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -446,7 +447,6 @@ func TestSessionRelayRejectsAsyncRoutes(t *testing.T) {
 	}{
 		{method: http.MethodPost, path: "/v1/video/generations"},
 		{method: http.MethodGet, path: "/v1/video/generations/task-1"},
-		{method: http.MethodPost, path: "/v1/videos"},
 		{method: http.MethodPost, path: "/suno/fetch"},
 	}
 	for _, test := range tests {
@@ -458,6 +458,118 @@ func TestSessionRelayRejectsAsyncRoutes(t *testing.T) {
 			assert.Equal(t, http.StatusUnauthorized, response.Code)
 		})
 	}
+}
+
+func TestVideosRouterAcceptsSessionAndAPIToken(t *testing.T) {
+	setupRelayRouterTestDB(t)
+	originalModelPrices := ratio_setting.ModelPrice2JSONString()
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"minimax_h3_zm_u24":0.1}`))
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(originalModelPrices))
+	})
+	user, _, accessToken := createRelaySession(t, "videos-router-user")
+	const initialUserQuota = 1_000_000
+	const initialTokenQuota = 800_000
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("quota", initialUserQuota).Error)
+
+	realToken := &model.Token{
+		UserId: user.Id, Name: "video-api-token", Key: "videoapitoken", Group: "default", Status: common.TokenStatusEnabled,
+		ExpiredTime: -1, RemainQuota: initialTokenQuota,
+	}
+	require.NoError(t, model.DB.Create(realToken).Error)
+
+	var upstreamAuthorization string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamAuthorization = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"code":"success","data":{"task_id":"autodl-task-1"}}`)
+	}))
+	defer upstream.Close()
+
+	baseURL := upstream.URL
+	channel := &model.Channel{
+		Type: constant.ChannelTypeAutoDL, Key: "upstream-autodl-key", Status: common.ChannelStatusEnabled,
+		Name: "session-autodl-channel", BaseURL: &baseURL, Models: "minimax_h3_zm_u24", Group: "default",
+		AutoBan: common.GetPointer(0),
+	}
+	require.NoError(t, model.DB.Create(channel).Error)
+	require.NoError(t, model.DB.Create(&model.Ability{
+		Group: "default", Model: "minimax_h3_zm_u24", ChannelId: channel.Id, Enabled: true,
+	}).Error)
+
+	require.NoError(t, model.DB.Create(&model.Task{
+		UserId: user.Id, TaskID: "owned-video-task", Platform: constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeAutoDL)), Action: constant.TaskActionGenerate, Status: model.TaskStatusSuccess,
+		Data: []byte(`{"data":{"status":"SUCCESS","results":["https://example.com/video.mp4"]}}`),
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.Task{
+		UserId: user.Id + 1, TaskID: "other-video-task", Platform: constant.TaskPlatform(strconv.Itoa(constant.ChannelTypeAutoDL)), Action: constant.TaskActionGenerate, Status: model.TaskStatusSuccess,
+	}).Error)
+
+	engine := gin.New()
+	SetVideoRouter(engine)
+
+	// 1. Unauthorized requests rejected with 401
+	unauthPost := httptest.NewRequest(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"minimax_h3_zm_u24","prompt":"test","image":"https://example.com/a.png"}`))
+	unauthPost.Header.Set("Content-Type", "application/json")
+	unauthPostResp := httptest.NewRecorder()
+	engine.ServeHTTP(unauthPostResp, unauthPost)
+	assert.Equal(t, http.StatusUnauthorized, unauthPostResp.Code)
+
+	unauthGet := httptest.NewRequest(http.MethodGet, "/v1/videos/owned-video-task", nil)
+	unauthGetResp := httptest.NewRecorder()
+	engine.ServeHTTP(unauthGetResp, unauthGet)
+	assert.Equal(t, http.StatusUnauthorized, unauthGetResp.Code)
+
+	// 2. Fetch owned task with session accessToken and api token
+	for _, credential := range []string{accessToken, "videoapitoken"} {
+		fetchReq := httptest.NewRequest(http.MethodGet, "/v1/videos/owned-video-task", nil)
+		fetchReq.Header.Set("Authorization", "Bearer "+credential)
+		fetchResp := httptest.NewRecorder()
+		engine.ServeHTTP(fetchResp, fetchReq)
+		require.Equal(t, http.StatusOK, fetchResp.Code)
+		assert.Contains(t, fetchResp.Body.String(), `"id":"owned-video-task"`)
+	}
+
+	// 3. Other user's task not accessible
+	otherReq := httptest.NewRequest(http.MethodGet, "/v1/videos/other-video-task", nil)
+	otherReq.Header.Set("Authorization", "Bearer "+accessToken)
+	otherResp := httptest.NewRecorder()
+	engine.ServeHTTP(otherResp, otherReq)
+	assert.Equal(t, http.StatusBadRequest, otherResp.Code)
+	assert.Contains(t, otherResp.Body.String(), "task_not_exist")
+
+	// 4. Submit video with session accessToken
+	submitReq := httptest.NewRequest(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"minimax_h3_zm_u24","prompt":"make a video","image":"https://example.com/a.png","duration":5}`))
+	submitReq.Header.Set("Authorization", "Bearer "+accessToken)
+	submitReq.Header.Set("Content-Type", "application/json")
+	submitResp := httptest.NewRecorder()
+	engine.ServeHTTP(submitResp, submitReq)
+	require.Equal(t, http.StatusOK, submitResp.Code, submitResp.Body.String())
+	assert.Equal(t, "upstream-autodl-key", upstreamAuthorization)
+	assert.NotContains(t, upstreamAuthorization, accessToken)
+
+	// User wallet deducted, real token unaffected
+	var updatedUser model.User
+	require.NoError(t, model.DB.First(&updatedUser, user.Id).Error)
+	assert.Less(t, updatedUser.Quota, initialUserQuota)
+	updatedToken, err := model.GetTokenById(realToken.Id)
+	require.NoError(t, err)
+	assert.Equal(t, initialTokenQuota, updatedToken.RemainQuota)
+
+	// 5. Test /v1/videos/generations route aliases
+	fetchAliasReq := httptest.NewRequest(http.MethodGet, "/v1/videos/generations/owned-video-task", nil)
+	fetchAliasReq.Header.Set("Authorization", "Bearer "+accessToken)
+	fetchAliasResp := httptest.NewRecorder()
+	engine.ServeHTTP(fetchAliasResp, fetchAliasReq)
+	require.Equal(t, http.StatusOK, fetchAliasResp.Code)
+	assert.Contains(t, fetchAliasResp.Body.String(), `"id":"owned-video-task"`)
+
+	submitAliasReq := httptest.NewRequest(http.MethodPost, "/v1/videos/generations", strings.NewReader(`{"model":"minimax_h3_zm_u24","prompt":"make another video","image":"https://example.com/a.png","duration":5}`))
+	submitAliasReq.Header.Set("Authorization", "Bearer "+accessToken)
+	submitAliasReq.Header.Set("Content-Type", "application/json")
+	submitAliasResp := httptest.NewRecorder()
+	engine.ServeHTTP(submitAliasResp, submitAliasReq)
+	require.Equal(t, http.StatusOK, submitAliasResp.Code, submitAliasResp.Body.String())
 }
 
 func TestListModelsSupportsOpenAIAndGeminiAuthentication(t *testing.T) {
@@ -534,6 +646,20 @@ func TestListModelsSupportsOpenAIAndGeminiAuthentication(t *testing.T) {
 	}
 }
 
+func TestApiRouterCanvasImagesGenerationsWired(t *testing.T) {
+	setupRelayRouterTestDB(t)
+	engine := gin.New()
+	SetApiRouter(engine)
+
+	// Unauthenticated request should hit the middleware and return 401
+	request := httptest.NewRequest(http.MethodPost, "/api/canvas/images/generations", strings.NewReader(`{"model":"dall-e-3","prompt":"cat"}`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, request)
+
+	assert.Equal(t, http.StatusUnauthorized, recorder.Code)
+}
+
 func setupRelayRouterTestDB(t *testing.T) {
 	t.Helper()
 
@@ -553,7 +679,7 @@ func setupRelayRouterTestDB(t *testing.T) {
 	require.NoError(t, os.Setenv("SQL_DSN", "local"))
 	require.NoError(t, model.InitDB())
 	model.LOG_DB = model.DB
-	require.NoError(t, model.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Ability{}, &model.Channel{}, &model.Log{}, &model.Midjourney{}, &model.UserSubscription{}, &model.UserSession{}))
+	require.NoError(t, model.DB.AutoMigrate(&model.User{}, &model.Token{}, &model.Ability{}, &model.Channel{}, &model.Log{}, &model.Midjourney{}, &model.Task{}, &model.UserSubscription{}, &model.UserSession{}))
 
 	t.Cleanup(func() {
 		if sqlDB, err := model.DB.DB(); err == nil {

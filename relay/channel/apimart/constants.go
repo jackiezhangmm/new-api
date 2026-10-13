@@ -1,6 +1,9 @@
 package apimart
 
-import "github.com/QuantumNous/new-api/relaykit/dto"
+import (
+	taskapimart "github.com/QuantumNous/new-api/relay/channel/task/apimart"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+)
 
 const (
 	ChannelName         = "APIMart"
@@ -8,4 +11,10 @@ const (
 	MidjourneyModelName = "mj_imagine"
 )
 
-var ModelList = []string{ModelName, dto.APIMartGrokImagineModel, MidjourneyModelName}
+var ModelList = []string{
+	ModelName,
+	dto.APIMartGrokImagineModel,
+	MidjourneyModelName,
+	taskapimart.ModelWan3Video,
+	taskapimart.ModelWan3VideoPrime,
+}

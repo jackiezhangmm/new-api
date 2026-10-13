@@ -10,6 +10,11 @@ build
 logs
 web/dist
 web/node_modules
+canvas/web/dist
+canvas/web/node_modules
+canvas/web/.vite
+canvas/web/.vite-temp
+canvas/web/tsconfig.tsbuildinfo
 .env
 .env.preview
 one-api

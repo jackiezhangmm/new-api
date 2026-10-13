@@ -267,6 +267,8 @@ var defaultModelRatio = map[string]float64{
 	"deepseek-ai/DeepSeek-R1":                 0.8,
 	"deepseek-ai/DeepSeek-V3-0324":            0.8,
 	"deepseek-ai/DeepSeek-V3.1":               0.8,
+	"wan3.0-video":                            0.3,
+	"wan3.0-video-prime":                      0.3,
 }
 
 var defaultModelPrice = map[string]float64{
@@ -301,6 +303,7 @@ var defaultModelPrice = map[string]float64{
 	"veo-3.0-fast-generate-001":      0.15,
 	"veo-3.1-generate-preview":       0.4,
 	"veo-3.1-fast-generate-preview":  0.15,
+	"minimax_h3_zm_u24":              0.1,
 }
 
 var defaultAudioRatio = map[string]float64{

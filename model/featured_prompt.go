@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -20,8 +21,18 @@ type FeaturedPrompt struct {
 	UpdatedAt int64  `json:"updated_at" gorm:"type:bigint;not null;autoCreateTime;autoUpdateTime"`
 }
 
-func ListFeaturedPrompts(pageInfo *common.PageInfo) ([]*FeaturedPrompt, int64, error) {
+func ListFeaturedPrompts(pageInfo *common.PageInfo, keyword string) ([]*FeaturedPrompt, int64, error) {
 	query := DB.Model(&FeaturedPrompt{})
+	keyword = strings.TrimSpace(keyword)
+	if keyword != "" {
+		pattern := "%" + keyword + "%"
+		likeOp := "ILIKE"
+		// ponytail: sqlite LIKE fallback for in-memory unit tests; production uses PostgreSQL ILIKE
+		if DB != nil && DB.Dialector != nil && DB.Dialector.Name() == "sqlite" {
+			likeOp = "LIKE"
+		}
+		query = query.Where("title "+likeOp+" ? OR prompt "+likeOp+" ?", pattern, pattern)
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err

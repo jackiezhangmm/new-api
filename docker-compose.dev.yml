@@ -35,6 +35,8 @@ services:
       - BATCH_UPDATE_ENABLED=true
       # Local HTTP dev mode: keep Secure=false and leave TRUSTED_URL unset. This disables the refresh/logout OriginGuard so the :5173 -> :3000 dev proxy works.
       - SESSION_COOKIE_SECURE=false
+      - USER_SESSION_ACTIVE_LIMIT=50000
+      - USER_SESSION_ISSUANCE_LIMIT=50000
       # For HTTPS only: set Secure=true and list every exact trusted HTTPS browser Origin. This does not configure relay CORS.
       # - SESSION_COOKIE_SECURE=true
       # - SESSION_COOKIE_TRUSTED_URL=https://example.com,https://admin.example.com

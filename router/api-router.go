@@ -161,6 +161,44 @@ func SetApiRouter(router *gin.Engine) {
 			featuredPromptRoute.DELETE("/:id", middleware.AdminAuth(), controller.DeleteFeaturedPrompt)
 		}
 
+		imageRoute := apiRouter.Group("/images")
+		imageRoute.Use(middleware.UserAuth())
+		{
+			imageRoute.POST("", controller.UploadImage)
+			imageRoute.GET("/:id", controller.GetImage)
+		}
+
+		mediaRoute := apiRouter.Group("/media")
+		mediaRoute.Use(middleware.UserAuth())
+		{
+			mediaRoute.POST("", controller.UploadMedia)
+			mediaRoute.GET("/:id", controller.GetMedia)
+		}
+
+		canvasRoute := apiRouter.Group("/canvas")
+		canvasRoute.Use(
+			middleware.TokenOrUserAuth(),
+			middleware.SetupSessionRelayContext(),
+			middleware.RequireSessionAuth(),
+			middleware.ModelRequestRateLimit(),
+			middleware.Distribute(),
+		)
+		{
+			canvasRoute.POST("/images/generations", controller.CanvasGenerateImages)
+			canvasRoute.POST("/images/edits", controller.CanvasEditImages)
+			canvasRoute.POST("/images/gemini/models/*path", controller.CanvasGenerateGeminiImages)
+		}
+
+		canvasProjectRoute := apiRouter.Group("/canvas/projects")
+		canvasProjectRoute.Use(middleware.UserAuth())
+		{
+			canvasProjectRoute.GET("", controller.ListCanvasProjects)
+			canvasProjectRoute.POST("", controller.CreateCanvasProject)
+			canvasProjectRoute.GET("/:id", controller.GetCanvasProject)
+			canvasProjectRoute.PUT("/:id", controller.UpdateCanvasProject)
+			canvasProjectRoute.DELETE("/:id", controller.DeleteCanvasProject)
+		}
+
 		// 数字资产是用户私有资源，侧栏可见性仅由前端控制。
 		digitalAssetRoute := apiRouter.Group("/digital-assets")
 		digitalAssetRoute.Use(middleware.UserAuth())

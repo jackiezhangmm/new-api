@@ -96,6 +96,12 @@ export function SidebarModulesSection({
         title: t('Conversation'),
         description: t('Use prompts and models for simple conversations.'),
       },
+      canvas: {
+        title: t('Infinite Canvas'),
+        description: t(
+          'Freeform AI creation canvas for image generation and ideation'
+        ),
+      },
       ecommerceDrawing: {
         title: t('Ecommerce Drawing'),
         description: t(

@@ -13,6 +13,7 @@ type DigitalAssetWriteRequest struct {
 	Title     string   `json:"title"`
 	Content   string   `json:"content"`
 	Tags      []string `json:"tags"`
+	ImageId   *string  `json:"image_id"`
 }
 
 type DigitalAssetFavoriteRequest struct {

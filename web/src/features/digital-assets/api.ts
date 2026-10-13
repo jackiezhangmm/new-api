@@ -21,6 +21,7 @@ import { api } from '@/lib/api'
 import type {
   ApiResponse,
   DigitalAsset,
+  DigitalAssetImage,
   DigitalAssetList,
   DigitalAssetPayload,
   DigitalAssetTag,
@@ -39,6 +40,7 @@ export async function listDigitalAssets(params: {
   favorite?: boolean
   search?: string
   tagIds?: number[]
+  assetType?: 'text' | 'image'
 }): Promise<DigitalAssetList> {
   const response = await api.get<ApiResponse<DigitalAssetList>>(
     '/api/digital-assets/',
@@ -49,6 +51,7 @@ export async function listDigitalAssets(params: {
         favorite: params.favorite,
         search: params.search || undefined,
         tag_id: params.tagIds?.length ? params.tagIds : undefined,
+        asset_type: params.assetType || undefined,
       },
       paramsSerializer: { indexes: null },
     }
@@ -107,4 +110,16 @@ export async function deleteDigitalAsset(id: number): Promise<void> {
     `/api/digital-assets/${id}`
   )
   unwrap(response.data)
+}
+
+export async function uploadAssetImage(
+  file: File
+): Promise<DigitalAssetImage> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await api.post<ApiResponse<DigitalAssetImage>>(
+    '/api/images',
+    formData
+  )
+  return unwrap(response.data)
 }

@@ -22,6 +22,7 @@ export default defineConfig(({ envMode }) => {
       { target: serverUrl, changeOrigin: true },
     ])
   ) as Record<string, { target: string; changeOrigin: boolean }>
+  devProxy['/canvas'] = { target: 'http://localhost:3001', changeOrigin: true }
 
   return {
     plugins: [pluginReact(), pluginTailwindcss({ optimize: false })],

@@ -346,6 +346,26 @@ func GetByTaskId(userId int, taskId string) (*Task, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
+	if !exist {
+		return nil, false, nil
+	}
+	return task, exist, err
+}
+
+func GetByOnlyTaskId(taskId string) (*Task, bool, error) {
+	if taskId == "" {
+		return nil, false, nil
+	}
+	var task *Task
+	var err error
+	err = DB.Where("task_id = ?", taskId).First(&task).Error
+	exist, err := RecordExist(err)
+	if err != nil {
+		return nil, false, err
+	}
+	if !exist {
+		return nil, false, nil
+	}
 	return task, exist, err
 }
 

@@ -12,4 +12,8 @@ docs
 .gocache
 /web/node_modules
 /web/dist
+/canvas/web/node_modules
+/canvas/web/dist
+/canvas/web/.vite
+/canvas/web/.vite-temp
 !THIRD-PARTY-LICENSES.md

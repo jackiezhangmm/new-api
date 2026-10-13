@@ -21,20 +21,41 @@ import { z } from 'zod'
 export const DIGITAL_ASSET_DEFAULT_TAGS = ['角色', '物品', '场景'] as const
 
 export function getDigitalAssetFormSchema(t: (key: string) => string) {
-  return z.object({
-    title: z
-      .string()
-      .trim()
-      .min(1, t('Title is required'))
-      .max(100, t('Title must be 100 characters or fewer')),
-    content: z
-      .string()
-      .max(100000, t('Content must be 100000 characters or fewer'))
-      .refine((value) => value.trim().length > 0, t('Content is required')),
-    tags: z
-      .array(z.string().trim().min(1).max(32))
-      .max(20, t('You can add up to 20 tags')),
-  })
+  return z
+    .object({
+      asset_type: z.enum(['text', 'image']),
+      title: z
+        .string()
+        .trim()
+        .min(1, t('Title is required'))
+        .max(100, t('Title must be 100 characters or fewer')),
+      content: z
+        .string()
+        .max(100000, t('Content must be 100000 characters or fewer')),
+      tags: z
+        .array(z.string().trim().min(1).max(32))
+        .max(20, t('You can add up to 20 tags')),
+      image_id: z.string().optional(),
+    })
+    .superRefine((data, ctx) => {
+      if (data.asset_type === 'text') {
+        if (!data.content.trim()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: t('Content is required'),
+            path: ['content'],
+          })
+        }
+      } else if (data.asset_type === 'image') {
+        if (!data.image_id || !data.image_id.trim()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: t('Please upload an image'),
+            path: ['image_id'],
+          })
+        }
+      }
+    })
 }
 
 export type DigitalAssetFormValues = z.infer<

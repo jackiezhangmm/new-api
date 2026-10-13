@@ -45,6 +45,7 @@ import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authen
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedPlaygroundAssetsRouteImport } from './routes/_authenticated/playground/assets'
 import { Route as AuthenticatedPlaygroundBackgroundRemovalRouteImport } from './routes/_authenticated/playground/background-removal'
+import { Route as AuthenticatedPlaygroundCanvasRouteImport } from './routes/_authenticated/playground/canvas'
 import { Route as AuthenticatedPlaygroundChatRouteImport } from './routes/_authenticated/playground/chat'
 import { Route as AuthenticatedPlaygroundDrawingRouteImport } from './routes/_authenticated/playground/drawing'
 import { Route as AuthenticatedPlaygroundEcommerceDrawingRouteImport } from './routes/_authenticated/playground/ecommerce-drawing'
@@ -263,6 +264,12 @@ const AuthenticatedPlaygroundBackgroundRemovalRoute =
     path: '/playground/background-removal',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedPlaygroundCanvasRoute =
+  AuthenticatedPlaygroundCanvasRouteImport.update({
+    id: '/playground/canvas',
+    path: '/playground/canvas',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedPlaygroundChatRoute =
   AuthenticatedPlaygroundChatRouteImport.update({
     id: '/playground/chat',
@@ -466,6 +473,7 @@ export interface FileRoutesByFullPath {
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/playground/assets': typeof AuthenticatedPlaygroundAssetsRoute
   '/playground/background-removal': typeof AuthenticatedPlaygroundBackgroundRemovalRoute
+  '/playground/canvas': typeof AuthenticatedPlaygroundCanvasRoute
   '/playground/chat': typeof AuthenticatedPlaygroundChatRoute
   '/playground/drawing': typeof AuthenticatedPlaygroundDrawingRoute
   '/playground/ecommerce-drawing': typeof AuthenticatedPlaygroundEcommerceDrawingRoute
@@ -530,6 +538,7 @@ export interface FileRoutesByTo {
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/playground/assets': typeof AuthenticatedPlaygroundAssetsRoute
   '/playground/background-removal': typeof AuthenticatedPlaygroundBackgroundRemovalRoute
+  '/playground/canvas': typeof AuthenticatedPlaygroundCanvasRoute
   '/playground/chat': typeof AuthenticatedPlaygroundChatRoute
   '/playground/drawing': typeof AuthenticatedPlaygroundDrawingRoute
   '/playground/ecommerce-drawing': typeof AuthenticatedPlaygroundEcommerceDrawingRoute
@@ -598,6 +607,7 @@ export interface FileRoutesById {
   '/_authenticated/models/$section': typeof AuthenticatedModelsSectionRoute
   '/_authenticated/playground/assets': typeof AuthenticatedPlaygroundAssetsRoute
   '/_authenticated/playground/background-removal': typeof AuthenticatedPlaygroundBackgroundRemovalRoute
+  '/_authenticated/playground/canvas': typeof AuthenticatedPlaygroundCanvasRoute
   '/_authenticated/playground/chat': typeof AuthenticatedPlaygroundChatRoute
   '/_authenticated/playground/drawing': typeof AuthenticatedPlaygroundDrawingRoute
   '/_authenticated/playground/ecommerce-drawing': typeof AuthenticatedPlaygroundEcommerceDrawingRoute
@@ -665,6 +675,7 @@ export interface FileRouteTypes {
     | '/models/$section'
     | '/playground/assets'
     | '/playground/background-removal'
+    | '/playground/canvas'
     | '/playground/chat'
     | '/playground/drawing'
     | '/playground/ecommerce-drawing'
@@ -729,6 +740,7 @@ export interface FileRouteTypes {
     | '/models/$section'
     | '/playground/assets'
     | '/playground/background-removal'
+    | '/playground/canvas'
     | '/playground/chat'
     | '/playground/drawing'
     | '/playground/ecommerce-drawing'
@@ -796,6 +808,7 @@ export interface FileRouteTypes {
     | '/_authenticated/models/$section'
     | '/_authenticated/playground/assets'
     | '/_authenticated/playground/background-removal'
+    | '/_authenticated/playground/canvas'
     | '/_authenticated/playground/chat'
     | '/_authenticated/playground/drawing'
     | '/_authenticated/playground/ecommerce-drawing'
@@ -1105,6 +1118,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPlaygroundBackgroundRemovalRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/playground/canvas': {
+      id: '/_authenticated/playground/canvas'
+      path: '/playground/canvas'
+      fullPath: '/playground/canvas'
+      preLoaderRoute: typeof AuthenticatedPlaygroundCanvasRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/playground/chat': {
       id: '/_authenticated/playground/chat'
       path: '/playground/chat'
@@ -1403,6 +1423,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedModelsSectionRoute: typeof AuthenticatedModelsSectionRoute
   AuthenticatedPlaygroundAssetsRoute: typeof AuthenticatedPlaygroundAssetsRoute
   AuthenticatedPlaygroundBackgroundRemovalRoute: typeof AuthenticatedPlaygroundBackgroundRemovalRoute
+  AuthenticatedPlaygroundCanvasRoute: typeof AuthenticatedPlaygroundCanvasRoute
   AuthenticatedPlaygroundChatRoute: typeof AuthenticatedPlaygroundChatRoute
   AuthenticatedPlaygroundDrawingRoute: typeof AuthenticatedPlaygroundDrawingRoute
   AuthenticatedPlaygroundEcommerceDrawingRoute: typeof AuthenticatedPlaygroundEcommerceDrawingRoute
@@ -1434,6 +1455,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedPlaygroundAssetsRoute: AuthenticatedPlaygroundAssetsRoute,
   AuthenticatedPlaygroundBackgroundRemovalRoute:
     AuthenticatedPlaygroundBackgroundRemovalRoute,
+  AuthenticatedPlaygroundCanvasRoute: AuthenticatedPlaygroundCanvasRoute,
   AuthenticatedPlaygroundChatRoute: AuthenticatedPlaygroundChatRoute,
   AuthenticatedPlaygroundDrawingRoute: AuthenticatedPlaygroundDrawingRoute,
   AuthenticatedPlaygroundEcommerceDrawingRoute:

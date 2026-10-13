@@ -11,6 +11,13 @@ COPY ./web ./
 COPY ./VERSION /build/VERSION
 RUN DISABLE_ESLINT_PLUGIN='true' VITE_REACT_APP_VERSION=$(cat /build/VERSION) bun run build
 
+WORKDIR /build/canvas/web
+COPY canvas/web/package.json canvas/web/bun.lock ./
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile --network-concurrency 24
+COPY ./canvas/web ./
+RUN bun run build
+
 FROM golang:1.25.1-alpine@sha256:b6ed3fd0452c0e9bcdef5597f29cc1418f61672e9d3a2f55bf02e7222c014abd AS builder2
 ENV GO111MODULE=on CGO_ENABLED=0 GOWORK=off
 
@@ -30,6 +37,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 COPY . .
 COPY --from=builder /build/web/dist ./web/dist
+COPY --from=builder /build/canvas/web/dist/. ./web/dist/canvas/
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go build -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=$(cat VERSION)'" -o new-api

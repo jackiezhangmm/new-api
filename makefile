@@ -18,6 +18,12 @@ build-web:
 	@echo "Building web frontend..."
 	@cd $(WEB_DIR) && bun install --frozen-lockfile
 	@cd $(WEB_DIR) && DISABLE_ESLINT_PLUGIN='true' VITE_REACT_APP_VERSION=$$(cat ../VERSION) bun run build
+	@echo "Building canvas frontend..."
+	@cd canvas/web && bun install --frozen-lockfile
+	@cd canvas/web && bun run build
+	@rm -rf $(WEB_DIR)/dist/canvas
+	@mkdir -p $(WEB_DIR)/dist/canvas
+	@cp -a canvas/web/dist/. $(WEB_DIR)/dist/canvas/
 
 build-all-web: build-web
 
@@ -36,8 +42,8 @@ dev-api-rebuild:
 dev-web:
 	@echo "Starting web frontend dev server..."
 	@echo "Web frontend: http://localhost:$(DEV_WEB_PORT)"
-	@cd $(WEB_DIR) && bun install
-	@cd $(WEB_DIR) && bun run dev -- --host 0.0.0.0 --port $(DEV_WEB_PORT)
+	@cd canvas/web && bun install --frozen-lockfile >/dev/null
+	@cd canvas/web && (bun run dev -- --host 0.0.0.0 --port 3001 &) && cd ../../$(WEB_DIR) && bun install && bun run dev -- --host 0.0.0.0 --port $(DEV_WEB_PORT)
 
 dev: dev-api dev-web
 

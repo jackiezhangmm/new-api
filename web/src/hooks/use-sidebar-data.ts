@@ -27,6 +27,7 @@ import {
   Image,
   ImageMinus,
   ImageUp,
+  InfinityIcon,
   Key,
   LayoutDashboard,
   ListTodo,
@@ -75,6 +76,11 @@ export function useSidebarData(): SidebarData {
             title: t('Drawing Plaza'),
             url: '/playground/drawing',
             icon: WandSparkles,
+          },
+          {
+            title: t('Infinite Canvas'),
+            url: '/playground/canvas',
+            icon: InfinityIcon,
           },
           {
             title: t('Ecommerce Drawing'),

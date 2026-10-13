@@ -45,9 +45,9 @@ func TestDigitalAssetPostgresSearchConstraintsAndCascade(t *testing.T) {
 
 	user := &User{Username: "asset-postgres-user", Password: "password123", Email: "asset-postgres@example.com", AffCode: "asset-postgres-aff"}
 	require.NoError(t, DB.Create(user).Error)
-	first, err := CreateDigitalAsset(user.Id, DigitalAssetTypeText, "City Portrait", "Neon LIGHT", []string{"Scene", "角色"})
+	first, err := CreateDigitalAsset(user.Id, DigitalAssetTypeText, "City Portrait", "Neon LIGHT", []string{"Scene", "角色"}, nil)
 	require.NoError(t, err)
-	_, err = CreateDigitalAsset(user.Id, DigitalAssetTypeText, "Quiet forest", "morning fog", []string{"Scene"})
+	_, err = CreateDigitalAsset(user.Id, DigitalAssetTypeText, "Quiet forest", "morning fog", []string{"Scene"}, nil)
 	require.NoError(t, err)
 
 	pageInfo := &common.PageInfo{Page: 1, PageSize: 12}

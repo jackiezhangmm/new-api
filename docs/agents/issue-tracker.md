@@ -1,6 +1,12 @@
 # Issue 跟踪器：GitHub
 
-本仓库的 Issues 和规格均使用 GitHub Issues 管理。所有操作使用 `gh` CLI。
+本仓库的一般 Issues 和规格使用 GitHub Issues 管理，相关操作使用 `gh` CLI。
+
+## Wayfinder 本地文档
+
+Wayfinder 规划与决策集中记录在 `docs/wayfinder/`，每项工作使用一份当前状态文档，不拆成 GitHub 决策票。正文原位维护有效决定与待决问题，历史由 Git 跟踪，不保留废弃决议或重复讨论。
+
+继续无限画布集成的 Wayfinder、审视其范围或准备实施时，读取 [无限画布集成路线图](../wayfinder/infinite-canvas.md)，以该文档作为当前规划入口。
 
 ## 约定
 

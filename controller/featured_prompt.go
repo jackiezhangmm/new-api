@@ -32,8 +32,15 @@ const featuredPromptsPerPage = 6
 
 func ListFeaturedPrompts(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
-	pageInfo.PageSize = featuredPromptsPerPage
-	items, total, err := model.ListFeaturedPrompts(pageInfo)
+	hasPageSize := c.Query("page_size") != "" || c.Query("ps") != "" || c.Query("size") != ""
+	if !hasPageSize {
+		pageInfo.PageSize = featuredPromptsPerPage
+	}
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	if keyword == "" {
+		keyword = strings.TrimSpace(c.Query("q"))
+	}
+	items, total, err := model.ListFeaturedPrompts(pageInfo, keyword)
 	if err != nil {
 		common.ApiError(c, err)
 		return

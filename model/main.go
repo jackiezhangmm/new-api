@@ -296,6 +296,9 @@ func migrateDB() error {
 		&SystemTaskLock{},
 		&CasbinRule{},
 		&AuthzRole{},
+		&Image{},
+		&Media{},
+		&CanvasProject{},
 	)
 	if err != nil {
 		return err

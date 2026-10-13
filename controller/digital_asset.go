@@ -18,6 +18,13 @@ func ListDigitalAssets(c *gin.Context) {
 	userId := common.GetContextKeyInt(c, constant.ContextKeyUserId)
 	pageInfo := common.GetPageQuery(c)
 	filter := model.DigitalAssetListFilter{Search: c.Query("search")}
+	if assetType := strings.TrimSpace(c.Query("asset_type")); assetType != "" {
+		if assetType != model.DigitalAssetTypeText && assetType != model.DigitalAssetTypeImage {
+			common.ApiErrorMsg(c, "资产类型无效")
+			return
+		}
+		filter.AssetType = assetType
+	}
 	if favoriteValue := c.Query("favorite"); favoriteValue != "" {
 		favorite, err := strconv.ParseBool(favoriteValue)
 		if err != nil {
@@ -73,7 +80,7 @@ func CreateDigitalAsset(c *gin.Context) {
 	if !ok {
 		return
 	}
-	asset, err := model.CreateDigitalAsset(userId, request.AssetType, request.Title, request.Content, request.Tags)
+	asset, err := model.CreateDigitalAsset(userId, request.AssetType, request.Title, request.Content, request.Tags, request.ImageId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -91,7 +98,7 @@ func UpdateDigitalAsset(c *gin.Context) {
 	if !ok {
 		return
 	}
-	asset, err := model.UpdateDigitalAsset(userId, id, request.AssetType, request.Title, request.Content, request.Tags)
+	asset, err := model.UpdateDigitalAsset(userId, id, request.AssetType, request.Title, request.Content, request.Tags, request.ImageId)
 	if err != nil {
 		digitalAssetError(c, err)
 		return
@@ -172,17 +179,43 @@ func bindDigitalAssetWriteRequest(c *gin.Context) (*dto.DigitalAssetWriteRequest
 	}
 	request.AssetType = strings.TrimSpace(request.AssetType)
 	request.Title = strings.TrimSpace(request.Title)
-	if request.AssetType != model.DigitalAssetTypeText {
-		common.ApiErrorMsg(c, "仅支持文本数字资产")
+	if request.AssetType != model.DigitalAssetTypeText && request.AssetType != model.DigitalAssetTypeImage {
+		common.ApiErrorMsg(c, "仅支持文本或图片数字资产")
 		return nil, false
 	}
 	if request.Title == "" || utf8.RuneCountInString(request.Title) > dto.DigitalAssetMaxTitleLength {
 		common.ApiErrorMsg(c, "标题长度必须为 1 到 100 个字符")
 		return nil, false
 	}
-	if strings.TrimSpace(request.Content) == "" || utf8.RuneCountInString(request.Content) > dto.DigitalAssetMaxContentLength {
-		common.ApiErrorMsg(c, "内容长度必须为 1 到 100000 个字符")
+	if request.AssetType == model.DigitalAssetTypeText {
+		if strings.TrimSpace(request.Content) == "" || utf8.RuneCountInString(request.Content) > dto.DigitalAssetMaxContentLength {
+			common.ApiErrorMsg(c, "内容长度必须为 1 到 100000 个字符")
+			return nil, false
+		}
+	} else {
+		if utf8.RuneCountInString(request.Content) > dto.DigitalAssetMaxContentLength {
+			common.ApiErrorMsg(c, "内容长度不能超过 100000 个字符")
+			return nil, false
+		}
+	}
+
+	if request.ImageId != nil && strings.TrimSpace(*request.ImageId) != "" {
+		trimmedImageId := strings.TrimSpace(*request.ImageId)
+		request.ImageId = &trimmedImageId
+		_, err := model.GetImageById(*request.ImageId)
+		if err != nil {
+			if errors.Is(err, model.ErrImageNotFound) {
+				common.ApiErrorMsg(c, "图片不存在")
+				return nil, false
+			}
+			common.ApiError(c, err)
+			return nil, false
+		}
+	} else if request.AssetType == model.DigitalAssetTypeImage {
+		common.ApiErrorMsg(c, "图片资产必须指定图片")
 		return nil, false
+	} else {
+		request.ImageId = nil
 	}
 	if len(request.Tags) > dto.DigitalAssetMaxTags {
 		common.ApiErrorMsg(c, "每个资产最多可使用 20 个标签")

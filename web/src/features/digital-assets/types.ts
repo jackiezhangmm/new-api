@@ -24,12 +24,23 @@ export type DigitalAssetTag = {
   updated_at: number
 }
 
+export type DigitalAssetImage = {
+  id: string
+  url: string
+  width: number
+  height: number
+  bytes?: number
+  mime_type: string
+}
+
 export type DigitalAsset = {
   id: number
   user_id: number
-  asset_type: 'text'
+  asset_type: 'text' | 'image'
   title: string
   content: string
+  image_id?: string
+  image?: DigitalAssetImage
   is_favorite: boolean
   created_at: number
   updated_at: number
@@ -37,10 +48,11 @@ export type DigitalAsset = {
 }
 
 export type DigitalAssetPayload = {
-  asset_type: 'text'
+  asset_type: 'text' | 'image'
   title: string
   content: string
   tags: string[]
+  image_id?: string | null
 }
 
 export type DigitalAssetList = {

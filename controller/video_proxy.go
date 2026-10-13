@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -30,6 +32,8 @@ func videoProxyError(c *gin.Context, status int, errType, message string) {
 	})
 }
 
+var videoIngestingTasks sync.Map
+
 func VideoProxy(c *gin.Context) {
 	taskID := c.Param("task_id")
 	if taskID == "" {
@@ -38,7 +42,14 @@ func VideoProxy(c *gin.Context) {
 	}
 
 	userID := c.GetInt("id")
-	task, exists, err := model.GetByTaskId(userID, taskID)
+	var task *model.Task
+	var exists bool
+	var err error
+	if userID > 0 {
+		task, exists, err = model.GetByTaskId(userID, taskID)
+	} else {
+		task, exists, err = model.GetByOnlyTaskId(taskID)
+	}
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to query task %s: %s", taskID, err.Error()))
 		videoProxyError(c, http.StatusInternalServerError, "server_error", "Failed to query task")
@@ -53,6 +64,15 @@ func VideoProxy(c *gin.Context) {
 		videoProxyError(c, http.StatusBadRequest, "invalid_request_error",
 			fmt.Sprintf("Task is not completed yet, current status: %s", task.Status))
 		return
+	}
+
+	currentURL := strings.TrimSpace(task.GetResultURL())
+	if currentURL != "" {
+		envPublicURL := strings.TrimRight(strings.TrimSpace(os.Getenv("S3_PUBLIC_URL")), "/")
+		if envPublicURL != "" && strings.HasPrefix(currentURL, envPublicURL) {
+			c.Redirect(http.StatusFound, currentURL)
+			return
+		}
 	}
 
 	channel, err := model.CacheGetChannel(task.ChannelId)
@@ -177,6 +197,32 @@ func VideoProxy(c *gin.Context) {
 
 	c.Writer.Header().Set("Cache-Control", "public, max-age=86400")
 	c.Writer.WriteHeader(resp.StatusCode)
+
+	driver := getImageStorageDriver()
+	if driver.IsConfigured() {
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, maxMediaBytes+1))
+		if readErr == nil && len(data) > 0 && int64(len(data)) <= maxMediaBytes {
+			_, _ = c.Writer.Write(data)
+			if _, loaded := videoIngestingTasks.LoadOrStore(task.TaskID, struct{}{}); !loaded {
+				go func(t *model.Task, videoBytes []byte) {
+					defer videoIngestingTasks.Delete(t.TaskID)
+					ext := ".mp4"
+					contentType := "video/mp4"
+					relKey := fmt.Sprintf("videos/%d/%s%s", t.UserId, t.TaskID, ext)
+					_, publicURL, uploadErr := driver.Upload(context.Background(), relKey, videoBytes, contentType)
+					if uploadErr == nil && publicURL != "" {
+						t.PrivateData.ResultURL = publicURL
+						_ = model.DB.Model(&model.Task{}).Where("id = ?", t.ID).Update("private_data", t.PrivateData).Error
+					}
+				}(task, data)
+			}
+			return
+		}
+		if len(data) > 0 {
+			_, _ = c.Writer.Write(data)
+		}
+	}
+
 	if _, err = io.Copy(c.Writer, resp.Body); err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to stream video content: %s", err.Error()))
 	}

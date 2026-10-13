@@ -10,7 +10,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const DigitalAssetTypeText = "text"
+const (
+	DigitalAssetTypeText  = "text"
+	DigitalAssetTypeImage = "image"
+)
 
 var ErrDigitalAssetNotFound = errors.New("数字资产不存在")
 
@@ -20,9 +23,11 @@ type DigitalAsset struct {
 	AssetType  string            `json:"asset_type" gorm:"type:varchar(32);not null"`
 	Title      string            `json:"title" gorm:"type:varchar(100);not null"`
 	Content    string            `json:"content" gorm:"type:text;not null"`
+	ImageId    *string           `json:"image_id,omitempty" gorm:"type:varchar(64);index"`
 	IsFavorite bool              `json:"is_favorite" gorm:"not null;default:false;index:idx_digital_assets_user_favorite_updated,priority:2"`
 	CreatedAt  int64             `json:"created_at" gorm:"type:bigint;not null;autoCreateTime"`
 	UpdatedAt  int64             `json:"updated_at" gorm:"type:bigint;not null;autoCreateTime;index:idx_digital_assets_user_updated,priority:2,sort:desc;index:idx_digital_assets_user_favorite_updated,priority:3,sort:desc"`
+	Image      *Image            `json:"image,omitempty" gorm:"foreignKey:ImageId;references:Id"`
 	Tags       []DigitalAssetTag `json:"tags" gorm:"-"`
 	User       User              `json:"-" gorm:"foreignKey:UserId;references:Id;constraint:OnDelete:CASCADE"`
 }
@@ -45,9 +50,10 @@ type DigitalAssetTagLink struct {
 }
 
 type DigitalAssetListFilter struct {
-	Favorite *bool
-	Search   string
-	TagIds   []int
+	Favorite  *bool
+	Search    string
+	TagIds    []int
+	AssetType string
 }
 
 var digitalAssetTagCaseFolder = cases.Fold()
@@ -60,6 +66,9 @@ func ListDigitalAssets(userId int, filter DigitalAssetListFilter, pageInfo *comm
 	query := DB.Model(&DigitalAsset{}).Where("user_id = ?", userId)
 	if filter.Favorite != nil {
 		query = query.Where("is_favorite = ?", *filter.Favorite)
+	}
+	if filter.AssetType != "" {
+		query = query.Where("asset_type = ?", filter.AssetType)
 	}
 	if search := strings.TrimSpace(filter.Search); search != "" {
 		pattern := "%" + search + "%"
@@ -81,7 +90,7 @@ func ListDigitalAssets(userId int, filter DigitalAssetListFilter, pageInfo *comm
 	}
 
 	assets := make([]*DigitalAsset, 0)
-	if err := query.Order("updated_at DESC, id DESC").Offset(pageInfo.GetStartIdx()).Limit(pageInfo.GetPageSize()).Find(&assets).Error; err != nil {
+	if err := query.Preload("Image").Order("updated_at DESC, id DESC").Offset(pageInfo.GetStartIdx()).Limit(pageInfo.GetPageSize()).Find(&assets).Error; err != nil {
 		return nil, 0, err
 	}
 	if err := loadDigitalAssetTags(assets); err != nil {
@@ -92,7 +101,7 @@ func ListDigitalAssets(userId int, filter DigitalAssetListFilter, pageInfo *comm
 
 func GetDigitalAsset(userId int, id int) (*DigitalAsset, error) {
 	asset := &DigitalAsset{}
-	if err := DB.Where("id = ? AND user_id = ?", id, userId).First(asset).Error; err != nil {
+	if err := DB.Preload("Image").Where("id = ? AND user_id = ?", id, userId).First(asset).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrDigitalAssetNotFound
 		}
@@ -104,12 +113,13 @@ func GetDigitalAsset(userId int, id int) (*DigitalAsset, error) {
 	return asset, nil
 }
 
-func CreateDigitalAsset(userId int, assetType string, title string, content string, tagNames []string) (*DigitalAsset, error) {
+func CreateDigitalAsset(userId int, assetType string, title string, content string, tagNames []string, imageId *string) (*DigitalAsset, error) {
 	asset := &DigitalAsset{
 		UserId:    userId,
 		AssetType: assetType,
 		Title:     title,
 		Content:   content,
+		ImageId:   imageId,
 	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(asset).Error; err != nil {
@@ -127,7 +137,7 @@ func CreateDigitalAsset(userId int, assetType string, title string, content stri
 	return GetDigitalAsset(userId, asset.Id)
 }
 
-func UpdateDigitalAsset(userId int, id int, assetType string, title string, content string, tagNames []string) (*DigitalAsset, error) {
+func UpdateDigitalAsset(userId int, id int, assetType string, title string, content string, tagNames []string, imageId *string) (*DigitalAsset, error) {
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		asset := &DigitalAsset{}
 		if err := tx.Where("id = ? AND user_id = ?", id, userId).First(asset).Error; err != nil {
@@ -144,12 +154,24 @@ func UpdateDigitalAsset(userId int, id int, assetType string, title string, cont
 		if now <= asset.UpdatedAt {
 			now = asset.UpdatedAt + 1
 		}
-		if err := tx.Model(asset).Updates(map[string]any{
+		updates := map[string]any{
 			"asset_type": assetType,
 			"title":      title,
 			"content":    content,
 			"updated_at": now,
-		}).Error; err != nil {
+		}
+		if assetType == DigitalAssetTypeImage {
+			if imageId != nil && *imageId != "" {
+				updates["image_id"] = *imageId
+			}
+		} else if assetType == DigitalAssetTypeText {
+			if imageId != nil && *imageId != "" {
+				updates["image_id"] = *imageId
+			} else {
+				updates["image_id"] = nil
+			}
+		}
+		if err := tx.Model(asset).Updates(updates).Error; err != nil {
 			return err
 		}
 		return replaceDigitalAssetTagLinks(tx, id, tags)

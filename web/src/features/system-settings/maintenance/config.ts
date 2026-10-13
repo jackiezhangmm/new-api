@@ -58,6 +58,7 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
     enabled: true,
     assets: true,
     playground: true,
+    canvas: true,
     ecommerceDrawing: true,
     watermarkRemoval: true,
     backgroundRemoval: true,

@@ -59,6 +59,7 @@ const (
 	ChannelTypeSub2API        = 59
 	ChannelTypeNewAPI         = 60
 	ChannelTypeAPIMart        = 61
+	ChannelTypeAutoDL         = 62
 	ChannelTypeDummy          // this one is only for count, do not add any channel after this
 
 )
@@ -126,6 +127,7 @@ var ChannelBaseURLs = []string{
 	"",                                          //59
 	"",                                          //60
 	"https://api.apimart.ai",                    //61
+	"https://autodl.art",                        //62
 }
 
 var ChannelTypeNames = map[int]string{
@@ -187,6 +189,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeSub2API:        "Sub2API",
 	ChannelTypeNewAPI:         "New API",
 	ChannelTypeAPIMart:        "APIMart",
+	ChannelTypeAutoDL:         "AutoDL",
 }
 
 func GetChannelTypeName(channelType int) string {

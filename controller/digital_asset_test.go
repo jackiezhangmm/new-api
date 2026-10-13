@@ -39,6 +39,7 @@ func TestDigitalAssetHTTPContractAndUserIsolation(t *testing.T) {
 	t.Cleanup(func() { model.DB = originalDB })
 	require.NoError(t, db.AutoMigrate(
 		&model.User{},
+		&model.Image{},
 		&model.DigitalAsset{},
 		&model.DigitalAssetTag{},
 		&model.DigitalAssetTagLink{},
@@ -101,6 +102,47 @@ func TestDigitalAssetHTTPContractAndUserIsolation(t *testing.T) {
 	require.Len(t, page.Data.Items, 1)
 	assert.Equal(t, second.Data.Id, page.Data.Items[0].Id)
 
+	require.NoError(t, db.Create(&model.Image{
+		Id:       "img-test-1",
+		UserId:   2,
+		Key:      "keys/img1.png",
+		URL:      "https://example.com/img1.png",
+		Width:    800,
+		Height:   600,
+		Bytes:    1024,
+		MimeType: "image/png",
+	}).Error)
+
+	imageAsset := performDigitalAssetRequest[model.DigitalAsset](t, router, http.MethodPost, "/api/digital-assets/", `{
+		"asset_type":"image",
+		"title":"画作资产",
+		"content":"a painting prompt",
+		"tags":["画作"],
+		"image_id":"img-test-1"
+	}`, "1")
+	require.True(t, imageAsset.Success)
+	assert.Equal(t, model.DigitalAssetTypeImage, imageAsset.Data.AssetType)
+	require.NotNil(t, imageAsset.Data.ImageId)
+	assert.Equal(t, "img-test-1", *imageAsset.Data.ImageId)
+	require.NotNil(t, imageAsset.Data.Image)
+	assert.Equal(t, "https://example.com/img1.png", imageAsset.Data.Image.URL)
+	assert.Equal(t, 800, imageAsset.Data.Image.Width)
+
+	textList := performDigitalAssetRequest[digitalAssetTestPage](t, router, http.MethodGet, "/api/digital-assets/?asset_type=text", "", "1")
+	require.True(t, textList.Success)
+	assert.Equal(t, 2, textList.Data.Total)
+	for _, item := range textList.Data.Items {
+		assert.Equal(t, model.DigitalAssetTypeText, item.AssetType)
+	}
+
+	imageList := performDigitalAssetRequest[digitalAssetTestPage](t, router, http.MethodGet, "/api/digital-assets/?asset_type=image", "", "1")
+	require.True(t, imageList.Success)
+	assert.Equal(t, 1, imageList.Data.Total)
+	require.Len(t, imageList.Data.Items, 1)
+	assert.Equal(t, imageAsset.Data.Id, imageList.Data.Items[0].Id)
+	require.NotNil(t, imageList.Data.Items[0].Image)
+	assert.Equal(t, "https://example.com/img1.png", imageList.Data.Items[0].Image.URL)
+
 	oldUpdatedAt := int64(10)
 	require.NoError(t, db.Model(&model.DigitalAsset{}).Where("id = ?", created.Data.Id).UpdateColumn("updated_at", oldUpdatedAt).Error)
 	favorite := performDigitalAssetRequest[model.DigitalAsset](t, router, http.MethodPatch, fmt.Sprintf("/api/digital-assets/%d/favorite", created.Data.Id), `{"is_favorite":true}`, "1")
@@ -152,20 +194,101 @@ func TestDigitalAssetHTTPContractAndUserIsolation(t *testing.T) {
 	missing := performDigitalAssetRequest[model.DigitalAsset](t, router, http.MethodGet, fmt.Sprintf("/api/digital-assets/%d", created.Data.Id), "", "1")
 	assert.False(t, missing.Success)
 	assert.Equal(t, foreignGet.Message, missing.Message)
+
+	deletedImageAsset := performDigitalAssetRequest[any](t, router, http.MethodDelete, fmt.Sprintf("/api/digital-assets/%d", imageAsset.Data.Id), "", "1")
+	require.True(t, deletedImageAsset.Success)
+	imgStillExists, err := model.GetImageById("img-test-1")
+	require.NoError(t, err)
+	assert.NotNil(t, imgStillExists)
+
+	emptyContentImageAsset := performDigitalAssetRequest[model.DigitalAsset](t, router, http.MethodPost, "/api/digital-assets/", `{
+		"asset_type":"image",
+		"title":"纯图片资产",
+		"content":"",
+		"tags":["纯图"],
+		"image_id":"img-test-1"
+	}`, "1")
+	require.True(t, emptyContentImageAsset.Success)
+	assert.Equal(t, "", emptyContentImageAsset.Data.Content)
+	assert.Equal(t, "纯图片资产", emptyContentImageAsset.Data.Title)
+
+	textWithImage := performDigitalAssetRequest[model.DigitalAsset](t, router, http.MethodPost, "/api/digital-assets/", `{
+		"asset_type":"text",
+		"title":"带参考图提示词",
+		"content":"A cyberpunk cat portrait",
+		"tags":["赛博"],
+		"image_id":"img-test-1"
+	}`, "1")
+	require.True(t, textWithImage.Success)
+	assert.Equal(t, model.DigitalAssetTypeText, textWithImage.Data.AssetType)
+	require.NotNil(t, textWithImage.Data.ImageId)
+	assert.Equal(t, "img-test-1", *textWithImage.Data.ImageId)
+	require.NotNil(t, textWithImage.Data.Image)
+	assert.Equal(t, "https://example.com/img1.png", textWithImage.Data.Image.URL)
+
+	textUnbindImage := performDigitalAssetRequest[model.DigitalAsset](t, router, http.MethodPut, fmt.Sprintf("/api/digital-assets/%d", textWithImage.Data.Id), `{
+		"asset_type":"text",
+		"title":"解绑参考图后的提示词",
+		"content":"A cyberpunk cat portrait without image",
+		"tags":["赛博"]
+	}`, "1")
+	require.True(t, textUnbindImage.Success)
+	assert.Nil(t, textUnbindImage.Data.ImageId)
+	assert.Nil(t, textUnbindImage.Data.Image)
+
+	textRebindImage := performDigitalAssetRequest[model.DigitalAsset](t, router, http.MethodPut, fmt.Sprintf("/api/digital-assets/%d", textWithImage.Data.Id), `{
+		"asset_type":"text",
+		"title":"重新绑定参考图",
+		"content":"A cyberpunk cat portrait with rebind",
+		"tags":["赛博"],
+		"image_id":"img-test-1"
+	}`, "1")
+	require.True(t, textRebindImage.Success)
+	require.NotNil(t, textRebindImage.Data.ImageId)
+	assert.Equal(t, "img-test-1", *textRebindImage.Data.ImageId)
+	require.NotNil(t, textRebindImage.Data.Image)
 }
 
 func TestDigitalAssetHTTPRejectsUnsupportedAndOversizedInput(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	originalDB := model.DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	model.DB = db
+	t.Cleanup(func() { model.DB = originalDB })
+	require.NoError(t, db.AutoMigrate(
+		&model.User{},
+		&model.Image{},
+		&model.DigitalAsset{},
+	))
+
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		common.SetContextKey(c, constant.ContextKeyUserId, 1)
 		c.Next()
 	})
+	router.GET("/api/digital-assets/", ListDigitalAssets)
 	router.POST("/api/digital-assets/", CreateDigitalAsset)
 
-	unsupported := performDigitalAssetRequest[any](t, router, http.MethodPost, "/api/digital-assets/", `{"asset_type":"image","title":"x","content":"x"}`, "1")
+	unsupported := performDigitalAssetRequest[any](t, router, http.MethodPost, "/api/digital-assets/", `{"asset_type":"audio","title":"x","content":"x"}`, "1")
 	assert.False(t, unsupported.Success)
-	assert.Contains(t, unsupported.Message, "仅支持文本")
+	assert.Contains(t, unsupported.Message, "仅支持文本或图片")
+
+	missingImageId := performDigitalAssetRequest[any](t, router, http.MethodPost, "/api/digital-assets/", `{"asset_type":"image","title":"x","content":"x"}`, "1")
+	assert.False(t, missingImageId.Success)
+	assert.Contains(t, missingImageId.Message, "必须指定图片")
+
+	nonexistentImage := performDigitalAssetRequest[any](t, router, http.MethodPost, "/api/digital-assets/", `{"asset_type":"image","title":"x","image_id":"no-such-image"}`, "1")
+	assert.False(t, nonexistentImage.Success)
+	assert.Contains(t, nonexistentImage.Message, "图片不存在")
+
+	textNonexistentImage := performDigitalAssetRequest[any](t, router, http.MethodPost, "/api/digital-assets/", `{"asset_type":"text","title":"带不存在图片的提示词","content":"valid content","image_id":"no-such-image"}`, "1")
+	assert.False(t, textNonexistentImage.Success)
+	assert.Contains(t, textNonexistentImage.Message, "图片不存在")
+
+	invalidTypeFilter := performDigitalAssetRequest[any](t, router, http.MethodGet, "/api/digital-assets/?asset_type=unknown", "", "1")
+	assert.False(t, invalidTypeFilter.Success)
+	assert.Contains(t, invalidTypeFilter.Message, "资产类型无效")
 
 	oversizedTitle := strings.Repeat("a", 101)
 	invalid := performDigitalAssetRequest[any](t, router, http.MethodPost, "/api/digital-assets/", fmt.Sprintf(`{"asset_type":"text","title":"%s","content":"x"}`, oversizedTitle), "1")

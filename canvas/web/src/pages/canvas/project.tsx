@@ -63,6 +63,7 @@ import {
     getInputSummary,
     hasResumableMjTask,
     hasResumableVideoTask,
+    hasUnresumableInFlightTask,
     hydrateAssistantImages,
     hydrateCanvasImages,
     imageExtension,
@@ -339,19 +340,22 @@ function InfiniteCanvasPage() {
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
     const videoPollIdsRef = useRef(new Set<string>());
     const mjPollIdsRef = useRef(new Set<string>());
-    const { generate: handleGenerateNode, retry: handleRetryNode, stop: stopGenerationByRunningId, runningIds } = useImageGeneration({ projectId, config: effectiveConfig, nodes, nodesRef, connectionsRef, setNodes, setConnections });
-    const runningIdsRef = useRef(runningIds);
-    runningIdsRef.current = runningIds;
+    const { generate: handleGenerateNode, retry: handleRetryNode, stop: stopGenerationByRunningId, runningIds } = useImageGeneration({
+        projectId,
+        config: effectiveConfig,
+        nodes,
+        nodesRef,
+        connectionsRef,
+        setNodes,
+        setConnections,
+        onPersistNodes: (persistedNodes) => {
+            nodesRef.current = persistedNodes;
+            void executeSave(persistedNodes);
+        },
+    });
 
     const checkHasInFlightTasks = useCallback((nodeList: CanvasNodeData[]) => {
-        if (runningIdsRef.current.size > 0) return true;
-        if (generationRequestsRef.current.size > 0) return true;
-        return nodeList.some(
-            (node) =>
-                (node.metadata?.status as string) === "loading" ||
-                (node.metadata?.status as string) === "uploading" ||
-                Boolean(node.metadata?.images?.some((img) => (img.status as string) === "loading" || (img.status as string) === "uploading")),
-        );
+        return nodeList.some(hasUnresumableInFlightTask);
     }, []);
 
     const createHistoryEntry = useCallback(
@@ -400,39 +404,41 @@ function InfiniteCanvasPage() {
                 setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined } } : item)));
                 controller = startGenerationRequest(node.id, node.id, node.id);
                 const video = await storeGeneratedVideo(await waitForVideoGenerationTask(generationConfig, { id: taskId, provider: node.metadata?.videoTaskProvider === "gemini" ? "gemini" : "openai", model: generationConfig.model }, { signal: controller.signal }));
-                setNodes((prev) =>
-                    prev.map((item) =>
-                        item.id === node.id
-                            ? applyGeneratedVideo(item, video, {
-                                  prompt: item.metadata?.prompt,
-                                  model: generationConfig.model,
-                                  size: generationConfig.size,
-                                  seconds: generationConfig.videoSeconds,
-                                  vquality: generationConfig.vquality,
-                                  fallbackUrl: `/v1/videos/${taskId}/content`,
-                              })
-                            : item,
-                    ),
+                const updatedNodes = (nodesRef.current || []).map((item) =>
+                    item.id === node.id
+                        ? applyGeneratedVideo(item, video, {
+                              prompt: item.metadata?.prompt,
+                              model: generationConfig.model,
+                              size: generationConfig.size,
+                              seconds: generationConfig.videoSeconds,
+                              vquality: generationConfig.vquality,
+                              fallbackUrl: `/v1/videos/${taskId}/content`,
+                          })
+                        : item,
                 );
+                nodesRef.current = updatedNodes;
+                setNodes(updatedNodes);
+                void executeSave(updatedNodes);
             } catch (error) {
                 if (isGenerationCanceled(error)) return;
                 const errorDetails = error instanceof Error ? error.message : t("canvas.projectPage.generationFailed");
-                message.error(errorDetails);
-                setNodes((prev) =>
-                    prev.map((item) =>
-                        item.id === node.id
-                            ? {
-                                  ...item,
-                                  metadata: {
-                                      ...item.metadata,
-                                      status: item.metadata?.content ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR,
-                                      errorDetails: item.metadata?.content ? undefined : errorDetails,
-                                      ...(isVideoTaskFailed(error) ? { videoTaskId: undefined } : {}),
-                                  },
-                              }
-                            : item,
-                    ),
+                if (!silent) message.error(errorDetails);
+                const updatedNodes = (nodesRef.current || []).map((item) =>
+                    item.id === node.id
+                        ? {
+                              ...item,
+                              metadata: {
+                                  ...item.metadata,
+                                  status: item.metadata?.content ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR,
+                                  errorDetails: item.metadata?.content ? undefined : errorDetails,
+                                  ...(isVideoTaskFailed(error) ? { videoTaskId: undefined } : {}),
+                              },
+                          }
+                        : item,
                 );
+                nodesRef.current = updatedNodes;
+                setNodes(updatedNodes);
+                void executeSave(updatedNodes);
             } finally {
                 videoPollIdsRef.current.delete(node.id);
                 if (controller) {
@@ -575,9 +581,9 @@ function InfiniteCanvasPage() {
     );
 
     const getContentComparisonSnapshot = useCallback(
-        () =>
+        (targetNodes?: CanvasNodeData[]) =>
             JSON.stringify({
-                nodes: nodesRef.current,
+                nodes: targetNodes || nodesRef.current,
                 connections: connectionsRef.current,
                 chatSessions: chatSessionsRef.current,
                 activeChatId: activeChatIdRef.current,
@@ -588,8 +594,8 @@ function InfiniteCanvasPage() {
     );
 
     const getFullContentSnapshot = useCallback(
-        () => ({
-            nodes: nodesRef.current,
+        (targetNodes?: CanvasNodeData[]) => ({
+            nodes: targetNodes || nodesRef.current,
             connections: connectionsRef.current,
             chatSessions: chatSessionsRef.current,
             activeChatId: activeChatIdRef.current,
@@ -617,75 +623,89 @@ function InfiniteCanvasPage() {
         }
     }, [checkHasInFlightTasks, getContentComparisonSnapshot, message, navigate, t]);
 
-    const executeSave = useCallback(async () => {
-        if (!projectLoaded || isSavingRef.current || checkHasInFlightTasks(nodesRef.current)) return;
-
-        if (autoSaveTimerRef.current) {
-            clearTimeout(autoSaveTimerRef.current);
-            autoSaveTimerRef.current = null;
-        }
-
-        isSavingRef.current = true;
-        setSaveStatus("saving");
-
-        const currentTitle = titleDraft.trim() || currentProject?.title || t("canvas.projectPage.untitledCanvas");
-        const contentSnapshot = getFullContentSnapshot();
-        const contentSnapshotCompare = getContentComparisonSnapshot();
-        const contentStr = JSON.stringify(contentSnapshot);
-        const revisionToSubmit = currentRevisionRef.current;
-
-        try {
-            const updated = await updateCloudProject(projectId, {
-                revision: revisionToSubmit,
-                title: currentTitle,
-                content: contentStr,
-            });
-
-            currentRevisionRef.current = updated.revision;
-            lastSavedContentRef.current = contentSnapshotCompare;
-            lastVisibilityCheckTimeRef.current = Date.now();
-
-            useCanvasStore.setState((state) => ({
-                projects: state.projects.map((p) =>
-                    p.id === projectId
-                        ? { ...p, title: updated.title, revision: updated.revision, updatedAt: new Date(updated.updated_at * 1000).toISOString() }
-                        : p,
-                ),
-            }));
-
-            isSavingRef.current = false;
-
-            const nowContentJson = getContentComparisonSnapshot();
-
-            if (nowContentJson !== lastSavedContentRef.current || isDirtyWhileSavingRef.current) {
-                isDirtyWhileSavingRef.current = false;
+    const executeSave = useCallback(
+        async (customNodes?: CanvasNodeData[]) => {
+            const targetNodes = customNodes || nodesRef.current;
+            if (!projectLoaded) return;
+            if (isSavingRef.current) {
+                isDirtyWhileSavingRef.current = true;
                 isDirtyRef.current = true;
-                setSaveStatus("dirty");
-                if (!checkHasInFlightTasks(nodesRef.current)) {
-                    autoSaveTimerRef.current = setTimeout(() => {
-                        void executeSave();
-                    }, 10000);
-                }
-            } else {
-                isDirtyRef.current = false;
-                setSaveStatus("saved");
+                return;
             }
-        } catch (err: unknown) {
-            isSavingRef.current = false;
-            if (err instanceof ConflictError) {
-                if (autoSaveTimerRef.current) {
-                    clearTimeout(autoSaveTimerRef.current);
-                    autoSaveTimerRef.current = null;
-                }
-                setSaveStatus("error");
-                setConflictModalOpen(true);
-            } else if (isNotFoundError(err)) {
-                handleProjectDeleted();
-            } else {
-                setSaveStatus("error");
+            if (checkHasInFlightTasks(targetNodes)) return;
+
+            if (customNodes) {
+                nodesRef.current = customNodes;
             }
-        }
-    }, [checkHasInFlightTasks, currentProject?.title, getContentComparisonSnapshot, getFullContentSnapshot, handleProjectDeleted, projectId, projectLoaded, t, titleDraft]);
+
+            if (autoSaveTimerRef.current) {
+                clearTimeout(autoSaveTimerRef.current);
+                autoSaveTimerRef.current = null;
+            }
+
+            isSavingRef.current = true;
+            setSaveStatus("saving");
+
+            const currentTitle = titleDraft.trim() || currentProject?.title || t("canvas.projectPage.untitledCanvas");
+            const contentSnapshot = getFullContentSnapshot(targetNodes);
+            const contentSnapshotCompare = getContentComparisonSnapshot(targetNodes);
+            const contentStr = JSON.stringify(contentSnapshot);
+            const revisionToSubmit = currentRevisionRef.current;
+
+            try {
+                const updated = await updateCloudProject(projectId, {
+                    revision: revisionToSubmit,
+                    title: currentTitle,
+                    content: contentStr,
+                });
+
+                currentRevisionRef.current = updated.revision;
+                lastSavedContentRef.current = contentSnapshotCompare;
+                lastVisibilityCheckTimeRef.current = Date.now();
+
+                useCanvasStore.setState((state) => ({
+                    projects: state.projects.map((p) =>
+                        p.id === projectId
+                            ? { ...p, title: updated.title, revision: updated.revision, updatedAt: new Date(updated.updated_at * 1000).toISOString() }
+                            : p,
+                    ),
+                }));
+
+                isSavingRef.current = false;
+
+                const nowContentJson = getContentComparisonSnapshot(targetNodes);
+
+                if (nowContentJson !== lastSavedContentRef.current || isDirtyWhileSavingRef.current) {
+                    isDirtyWhileSavingRef.current = false;
+                    isDirtyRef.current = true;
+                    setSaveStatus("dirty");
+                    if (!checkHasInFlightTasks(nodesRef.current)) {
+                        autoSaveTimerRef.current = setTimeout(() => {
+                            void executeSave();
+                        }, 10000);
+                    }
+                } else {
+                    isDirtyRef.current = false;
+                    setSaveStatus("saved");
+                }
+            } catch (err: unknown) {
+                isSavingRef.current = false;
+                if (err instanceof ConflictError) {
+                    if (autoSaveTimerRef.current) {
+                        clearTimeout(autoSaveTimerRef.current);
+                        autoSaveTimerRef.current = null;
+                    }
+                    setSaveStatus("error");
+                    setConflictModalOpen(true);
+                } else if (isNotFoundError(err)) {
+                    handleProjectDeleted();
+                } else {
+                    setSaveStatus("error");
+                }
+            }
+        },
+        [checkHasInFlightTasks, currentProject?.title, getContentComparisonSnapshot, getFullContentSnapshot, handleProjectDeleted, projectId, projectLoaded, t, titleDraft],
+    );
 
     useEffect(() => {
         let active = true;

@@ -24,10 +24,11 @@ type Props = {
     connectionsRef: RefObject<CanvasConnection[]>;
     setNodes: Dispatch<SetStateAction<CanvasNodeData[]>>;
     setConnections: Dispatch<SetStateAction<CanvasConnection[]>>;
+    onPersistNodes?: (nodes: CanvasNodeData[]) => Promise<void> | void;
 };
 type Run = { controller: AbortController; targetId?: string };
 
-export function useImageGeneration({ projectId, config, nodes, nodesRef, connectionsRef, setNodes, setConnections }: Props) {
+export function useImageGeneration({ projectId, config, nodes, nodesRef, connectionsRef, setNodes, setConnections, onPersistNodes }: Props) {
     const { t } = useTranslation();
     const { message } = App.useApp();
     const runs = useRef(new Map<string, Run>());
@@ -206,6 +207,14 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
         [config, connectionsRef, message, nodesRef, setConnections, setNodes, stop, t],
     );
 
+    const commitNodesAndPersist = useCallback(
+        (updated: CanvasNodeData[]) => {
+            setNodes(updated);
+            void onPersistNodes?.(updated);
+        },
+        [onPersistNodes, setNodes],
+    );
+
     const executeVideo = useCallback(
         async (sourceId: string, prompt: string, retryTarget?: { targetId?: string }) => {
             stop(sourceId);
@@ -293,55 +302,56 @@ export function useImageGeneration({ projectId, config, nodes, nodesRef, connect
                     signal: controller.signal,
                     audios,
                 });
-                setNodes((prev) =>
-                    prev.map((item) =>
-                        item.id === targetNodeId
-                            ? { ...item, metadata: { ...item.metadata, videoTaskId: task.id, videoTaskProvider: task.provider, model: generationConfig.model } }
-                            : item,
-                    ),
+                const updatedWithTask = (nodesRef.current || []).map((item) =>
+                    item.id === targetNodeId
+                        ? { ...item, metadata: { ...item.metadata, videoTaskId: task.id, videoTaskProvider: task.provider, model: generationConfig.model } }
+                        : item,
                 );
+                commitNodesAndPersist(updatedWithTask);
 
                 const result = await waitForVideoGenerationTask(generationConfig, task, { signal: controller.signal });
                 const video = await storeGeneratedVideo(result);
                 const fallbackUrl = `/v1/videos/${task.id}/content`;
-                setNodes((prev) =>
-                    prev.map((item) =>
-                        item.id === targetNodeId
-                            ? applyGeneratedVideo(item, video, {
-                                  prompt: effectivePrompt,
-                                  model: generationConfig.model,
-                                  size: generationConfig.size,
-                                  seconds: generationConfig.videoSeconds,
-                                  vquality: generationConfig.vquality,
-                                  negativePrompt: generationConfig.negativePrompt,
-                                  generateAudio: generationConfig.videoGenerateAudio,
-                                  videoMode: generationConfig.videoMode,
-                                  audios: audios.map((a) => a.storageKey || a.url).filter(Boolean),
-                                  fallbackUrl,
-                                  status: "success" as const,
-                              })
-                            : item,
-                    ),
+                const updatedWithVideo = (nodesRef.current || []).map((item) =>
+                    item.id === targetNodeId
+                        ? applyGeneratedVideo(item, video, {
+                              prompt: effectivePrompt,
+                              model: generationConfig.model,
+                              size: generationConfig.size,
+                              seconds: generationConfig.videoSeconds,
+                              vquality: generationConfig.vquality,
+                              negativePrompt: generationConfig.negativePrompt,
+                              generateAudio: generationConfig.videoGenerateAudio,
+                              videoMode: generationConfig.videoMode,
+                              audios: audios.map((a) => a.storageKey || a.url).filter(Boolean),
+                              fallbackUrl,
+                              status: "success" as const,
+                          })
+                        : item,
                 );
+                commitNodesAndPersist(updatedWithVideo);
             } catch (error) {
                 if (!controller.signal.aborted && !(error instanceof Error && error.name === "AbortError")) {
                     const errorDetails = error instanceof Error ? error.message : t("canvas.projectPage.generationFailed");
                     message.error(errorDetails);
-                    setNodes((prev) =>
-                        prev.map((item) =>
-                            item.id === targetNodeId
-                                ? {
-                                      ...item,
-                                      metadata: {
-                                          ...item.metadata,
-                                          status: "error" as const,
-                                          errorDetails,
-                                          ...(isVideoTaskFailed(error) ? { videoTaskId: undefined } : {}),
-                                      },
-                                  }
-                                : item,
-                        ),
+                    const hadTaskId = Boolean((nodesRef.current || []).find((item) => item.id === targetNodeId)?.metadata?.videoTaskId);
+                    const updatedWithError = (nodesRef.current || []).map((item) =>
+                        item.id === targetNodeId
+                            ? {
+                                  ...item,
+                                  metadata: {
+                                      ...item.metadata,
+                                      status: "error" as const,
+                                      errorDetails,
+                                      ...(isVideoTaskFailed(error) ? { videoTaskId: undefined } : {}),
+                                  },
+                              }
+                            : item,
                     );
+                    setNodes(updatedWithError);
+                    if (hadTaskId) {
+                        void onPersistNodes?.(updatedWithError);
+                    }
                 }
             } finally {
                 if (runs.current.get(sourceId) === run) {

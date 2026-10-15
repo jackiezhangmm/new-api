@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runCanvasImageGeneration, runCanvasTextGeneration } from "../image-generation";
-import { hasResumableMjTask, resetInterruptedGeneration } from "../canvas-generation-helpers";
+import {
+    hasResumableMjTask,
+    hasResumableVideoTask,
+    hasResumableTask,
+    hasUnresumableInFlightTask,
+    resetInterruptedGeneration,
+} from "../canvas-generation-helpers";
 import { buildNodeResponseMessages } from "@/components/canvas/canvas-node-generation";
 import { MIDJOURNEY_POLISH_TEMPLATE } from "@/services/api/prompts";
 import { defaultConfig } from "@/stores/use-config-store";
@@ -745,6 +751,98 @@ test("Midjourney 断点保护：resetInterruptedGeneration 保护在途 mjTaskId
     const protectedMj = resetNodes.find((n) => n.id === "node-mj-in-flight");
     assert.equal(protectedMj?.metadata?.status, "loading");
     assert.equal(protectedMj?.metadata?.mjTaskId, "task-resumable-123");
+});
+
+test("Wan3.0 视频与异步任务断点保护：videoTaskId 判定、落盘过滤与重载恢复", () => {
+    const inFlightVideoNode: CanvasNodeData = {
+        id: "node-video-in-flight",
+        type: CanvasNodeType.Video,
+        title: "wan3.0 video generating",
+        position: { x: 0, y: 0 },
+        width: 340,
+        height: 240,
+        metadata: {
+            status: "loading",
+            model: "wan3.0-video",
+            videoTaskId: "task_V3xZDr7UIdEemQgO6fntdPkoy0vLWfkc",
+        },
+    };
+
+    const regularLoadingVideoNode: CanvasNodeData = {
+        id: "node-video-loading",
+        type: CanvasNodeType.Video,
+        title: "creating video task",
+        position: { x: 100, y: 0 },
+        width: 340,
+        height: 240,
+        metadata: {
+            status: "loading",
+            model: "wan3.0-video",
+        },
+    };
+
+    const completedVideoNode: CanvasNodeData = {
+        id: "node-video-completed",
+        type: CanvasNodeType.Video,
+        title: "video completed",
+        position: { x: 200, y: 0 },
+        width: 340,
+        height: 240,
+        metadata: {
+            status: "success",
+            model: "wan3.0-video",
+            videoTaskId: "task_V3xZDr7UIdEemQgO6fntdPkoy0vLWfkc",
+            content: "https://example.com/video.mp4",
+        },
+    };
+
+    const inFlightRegularImageNode: CanvasNodeData = {
+        id: "node-image-loading",
+        type: CanvasNodeType.Image,
+        title: "regular image generating",
+        position: { x: 300, y: 0 },
+        width: 340,
+        height: 240,
+        metadata: {
+            images: [
+                {
+                    id: "img-loading",
+                    status: "loading",
+                    content: "",
+                    naturalWidth: 0,
+                    naturalHeight: 0,
+                    bytes: 0,
+                    mimeType: "",
+                },
+            ],
+        },
+    };
+
+    // 1. hasResumableVideoTask 判定
+    assert.equal(hasResumableVideoTask(inFlightVideoNode), true);
+    assert.equal(hasResumableVideoTask(regularLoadingVideoNode), false);
+    assert.equal(hasResumableVideoTask(completedVideoNode), false);
+    assert.equal(hasResumableTask(inFlightVideoNode), true);
+
+    // 2. hasUnresumableInFlightTask 判定（决定是否阻断自动保存落盘）
+    // 已取得 videoTaskId 的异步在途任务属于可恢复任务，不阻断工程保存
+    assert.equal(hasUnresumableInFlightTask(inFlightVideoNode), false);
+    // 尚未拿到 taskId 的初始 loading 节点或普通单图在途节点属于瞬态在途，必须阻断草稿落盘
+    assert.equal(hasUnresumableInFlightTask(regularLoadingVideoNode), true);
+    assert.equal(hasUnresumableInFlightTask(inFlightRegularImageNode), true);
+    assert.equal(hasUnresumableInFlightTask(completedVideoNode), false);
+
+    // 3. resetInterruptedGeneration 行为
+    const resetNodes = resetInterruptedGeneration([regularLoadingVideoNode, inFlightVideoNode, completedVideoNode]);
+
+    // 未拿到 taskId 的初始 loading 节点在刷新重载时置为 error
+    const resetRegular = resetNodes.find((n) => n.id === "node-video-loading");
+    assert.equal(resetRegular?.metadata?.status, "error");
+
+    // 持有 videoTaskId 的视频任务节点受保护，维持 loading 状态以供挂载后静默轮询恢复
+    const protectedVideo = resetNodes.find((n) => n.id === "node-video-in-flight");
+    assert.equal(protectedVideo?.metadata?.status, "loading");
+    assert.equal(protectedVideo?.metadata?.videoTaskId, "task_V3xZDr7UIdEemQgO6fntdPkoy0vLWfkc");
 });
 
 test("提示词润色模板动态装配：当活动模型为 mj_imagine 时，文本生成消息自动注入 Midjourney 专用提示词改写模板", () => {

@@ -140,10 +140,24 @@ export function hasResumableMjTask(node: CanvasNodeData) {
     return node.type === CanvasNodeType.Image && Boolean(node.metadata?.mjTaskId) && !node.metadata?.content;
 }
 
+export function hasResumableTask(node: CanvasNodeData): boolean {
+    return hasResumableVideoTask(node) || hasResumableMjTask(node);
+}
+
+export function hasUnresumableInFlightTask(node: CanvasNodeData): boolean {
+    const status = node.metadata?.status as string | undefined;
+    if (status === "uploading") return true;
+    if (status === "loading" && !hasResumableTask(node)) return true;
+    if (node.metadata?.images?.some((img) => (img.status as string) === "loading" || (img.status as string) === "uploading")) {
+        return !hasResumableMjTask(node);
+    }
+    return false;
+}
+
 export function resetInterruptedGeneration(nodes: CanvasNodeData[]) {
     return nodes.map((node) =>
         node.metadata?.status === "loading"
-            ? hasResumableVideoTask(node) || hasResumableMjTask(node)
+            ? hasResumableTask(node)
                 ? node
                 : {
                       ...node,
